@@ -1,3 +1,6 @@
+use crate::batch::run_next_app;
+use crate::syscall::syscall;
+use crate::trap::context::TrapContext;
 use core::arch::global_asm;
 use log::error;
 use riscv::register::{
@@ -5,9 +8,6 @@ use riscv::register::{
     scause::{self, Exception, Trap},
     stval, stvec,
 };
-use crate::batch::run_next_app;
-use crate::syscall::syscall;
-use crate::trap::context::TrapContext;
 
 pub mod context;
 
