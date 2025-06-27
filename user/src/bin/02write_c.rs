@@ -6,19 +6,19 @@ extern crate user_lib;
 
 use user_lib::yield_;
 
-const WIDTH: usize = 10;
-const HEIGHT: usize = 2;
+const WIDTH: usize = 20;
+const HEIGHT: usize = 100;
 
 #[unsafe(no_mangle)]
 fn main() -> i32 {
-    println!("Test write_b started!");
+    println!("Test write_c started!");
     for i in 0..HEIGHT {
         for _ in 0..WIDTH {
-            print!("B");
+            print!("C");
         }
         println!(" [{}/{}]", i + 1, HEIGHT);
-        yield_();
+        // yield_();
     }
-    println!("Test write_b OK!");
+    println!("Test write_c OK!");
     0
 }
