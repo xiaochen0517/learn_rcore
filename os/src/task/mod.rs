@@ -12,6 +12,7 @@ use lazy_static::*;
 use switch::__switch;
 use task::{TaskControlBlock, TaskStatus};
 
+use crate::timer::get_time_ms;
 pub use context::TaskContext;
 use log::info;
 
@@ -38,6 +39,8 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            task_start_time: 0,
+            task_end_time: 0,
         }; MAX_APP_NUM];
         // 初始化每个任务的上下文
         for (i, task) in tasks.iter_mut().enumerate() {
@@ -66,6 +69,7 @@ impl TaskManager {
         // 获取到第一个任务，并将任务状态设置为 `Running`
         let task0 = &mut inner.tasks[0];
         task0.task_status = TaskStatus::Running;
+        task0.task_start_time = get_time_ms();
         // 获取当前第一个任务的上下文指针
         let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
         // 释放对任务管理器的可变引用
@@ -94,7 +98,17 @@ impl TaskManager {
     fn mark_current_exited(&self) {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
-        inner.tasks[current].task_status = TaskStatus::Exited;
+        let mut current_task_info = inner.tasks[current];
+        current_task_info.task_status = TaskStatus::Exited;
+        current_task_info.task_end_time = get_time_ms();
+        if current_task_info.task_end_time < current_task_info.task_start_time {
+            info!("[kernel] Task {} exited with negative duration!", current);
+        }
+        info!(
+            "[kernel] Task {} exited, duration: {} ms",
+            current,
+            current_task_info.task_end_time - current_task_info.task_start_time
+        );
     }
 
     /// 发现下一个 `Ready` 任务

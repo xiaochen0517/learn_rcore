@@ -6,7 +6,7 @@ extern crate user_lib;
 
 use user_lib::yield_;
 
-const WIDTH: usize = 20;
+const WIDTH: usize = 80;
 const HEIGHT: usize = 100;
 
 #[unsafe(no_mangle)]
