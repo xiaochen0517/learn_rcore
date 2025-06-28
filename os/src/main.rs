@@ -1,5 +1,10 @@
 #![no_main]
 #![no_std]
+#![feature(alloc_error_handler)]
+
+extern crate alloc;
+#[macro_use]
+extern crate bitflags;
 
 #[macro_use]
 mod console;
@@ -8,6 +13,7 @@ mod config;
 mod lang_items;
 mod loader;
 pub mod logging;
+mod mm;
 mod sbi;
 mod sync;
 pub mod syscall;
@@ -15,6 +21,7 @@ mod task;
 mod timer;
 pub mod trap;
 
+use crate::mm::heap_allocator::{heap_test, init_heap};
 use core::arch::global_asm;
 use log::{debug, error, info, trace, warn};
 
@@ -33,16 +40,16 @@ fn clear_bss() {
 
 fn print_boot_info() {
     unsafe extern "C" {
-        safe fn stext(); // begin addr of text segment
-        safe fn etext(); // end addr of text segment
-        safe fn srodata(); // start addr of Read-Only data segment
-        safe fn erodata(); // end addr of Read-Only data ssegment
-        safe fn sdata(); // start addr of data segment
-        safe fn edata(); // end addr of data segment
-        safe fn sbss(); // start addr of BSS segment
-        safe fn ebss(); // end addr of BSS segment
-        safe fn boot_stack_lower_bound(); // stack lower bound
-        safe fn boot_stack_top(); // stack top
+        fn stext(); // begin addr of text segment
+        fn etext(); // end addr of text segment
+        fn srodata(); // start addr of Read-Only data segment
+        fn erodata(); // end addr of Read-Only data ssegment
+        fn sdata(); // start addr of data segment
+        fn edata(); // end addr of data segment
+        fn sbss(); // start addr of BSS segment
+        fn ebss(); // end addr of BSS segment
+        fn boot_stack_lower_bound(); // stack lower bound
+        fn boot_stack_top(); // stack top
     }
     println!("[kernel] Hello, RISC-V World!");
     println!("[kernel] Hello, world!");
@@ -73,6 +80,9 @@ fn rust_main() {
     print_boot_info();
     trap::init();
     loader::load_apps();
+    init_heap();
+    heap_test();
+
     // 启动计时中断
     trap::enable_timer_interrupt();
     // 设置下一个计时中断触发

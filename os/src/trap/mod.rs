@@ -3,7 +3,7 @@ use crate::task::suspend_current_and_run_next;
 use crate::timer::set_next_trigger;
 pub use crate::trap::context::TrapContext;
 use core::arch::global_asm;
-use log::{debug, error, info};
+use log::error;
 use riscv::register::scause::Interrupt;
 use riscv::register::{
     mtvec::TrapMode,
