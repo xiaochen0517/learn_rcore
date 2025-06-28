@@ -3,7 +3,7 @@ use crate::task::suspend_current_and_run_next;
 use crate::timer::set_next_trigger;
 pub use crate::trap::context::TrapContext;
 use core::arch::global_asm;
-use log::error;
+use log::{debug, error, info};
 use riscv::register::scause::Interrupt;
 use riscv::register::{
     mtvec::TrapMode,
@@ -31,6 +31,7 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
     let stval = stval::read();
     match scause.cause() {
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
+            // info!("[kernel] CPU timer interrupt, run scheduler.");
             set_next_trigger();
             suspend_current_and_run_next();
         }
