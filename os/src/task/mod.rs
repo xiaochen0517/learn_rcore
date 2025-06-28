@@ -96,7 +96,7 @@ impl TaskManager {
 
     /// 将当前 `Running` 任务的状态标记为 `Exited`，即已退出。
     fn mark_current_exited(&self) {
-        let mut inner = self.inner.exclusive_access();
+        let inner = self.inner.exclusive_access();
         let current = inner.current_task;
         let mut current_task_info = inner.tasks[current];
         current_task_info.task_status = TaskStatus::Exited;
