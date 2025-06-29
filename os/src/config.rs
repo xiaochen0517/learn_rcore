@@ -13,7 +13,7 @@ pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
 pub const TRAP_CONTEXT: usize = TRAMPOLINE - PAGE_SIZE;
 
 
-/// Return (bottom, top) of a kernel stack in kernel space.
+/// # 获取内核栈的起始和结束位置
 pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
     let top = TRAMPOLINE - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
     let bottom = top - KERNEL_STACK_SIZE;
@@ -21,10 +21,3 @@ pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
 }
 
 pub use crate::boards::{CLOCK_FREQ, MEMORY_END, MMIO};
-
-// 最大应用数量
-pub const MAX_APP_NUM: usize = 4;
-// 应用基地址
-pub const APP_BASE_ADDRESS: usize = 0x80400000;
-// 应用大小限制
-pub const APP_SIZE_LIMIT: usize = 0x20000;

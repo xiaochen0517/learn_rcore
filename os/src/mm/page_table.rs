@@ -4,6 +4,7 @@ use super::{FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum, frame_a
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
+use log::error;
 
 bitflags! {
     /// page table entry flags
@@ -130,6 +131,9 @@ impl PageTable {
     #[allow(unused)]
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).unwrap();
+        if pte.is_valid() {
+            error!("Mapping vpn {:?} to ppn {:?}", vpn, ppn);
+        }
         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
     }
