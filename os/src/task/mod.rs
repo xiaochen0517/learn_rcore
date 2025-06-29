@@ -4,15 +4,16 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::config::MAX_APP_NUM;
-use crate::loader::{get_num_app, init_app_cx};
+use crate::loader::{get_app_data, get_num_app};
 use crate::sbi::shutdown;
 use crate::sync::UPSafeCell;
+use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
 use task::{TaskControlBlock, TaskStatus};
 
 use crate::timer::get_time_ms;
+use crate::trap::TrapContext;
 pub use context::TaskContext;
 use log::info;
 
@@ -25,7 +26,7 @@ pub struct TaskManager {
 /// 任务管理器单例
 struct TaskManagerInner {
     /// 任务列表
-    tasks: [TaskControlBlock; MAX_APP_NUM],
+    tasks: Vec<TaskControlBlock>,
     /// 当前运行的任务索引
     current_task: usize,
 }
@@ -33,22 +34,14 @@ struct TaskManagerInner {
 lazy_static! {
     /// Global variable: TASK_MANAGER
     pub static ref TASK_MANAGER: TaskManager = {
-        // 获取应用数量
+        info!("[kernel] init TASK_MANAGER");
         let num_app = get_num_app();
-        // 初始化任务列表
-        let mut tasks = [TaskControlBlock {
-            task_cx: TaskContext::zero_init(),
-            task_status: TaskStatus::UnInit,
-            task_start_time: 0,
-            task_end_time: 0,
-        }; MAX_APP_NUM];
-        // 初始化每个任务的上下文
-        for (i, task) in tasks.iter_mut().enumerate() {
-            task.task_cx = TaskContext::goto_restore(init_app_cx(i));
-            task.task_status = TaskStatus::Ready;
+        info!("[kernel] num_app = {}", num_app);
+        let mut tasks: Vec<TaskControlBlock> = Vec::new();
+        for i in 0..num_app {
+            tasks.push(TaskControlBlock::new(get_app_data(i), i));
         }
-        info!("TaskManager created with {} tasks.", num_app);
-        // 创建任务管理器
+        info!("[kernel] TaskControlBlock created.");
         TaskManager {
             num_app,
             inner: unsafe {
@@ -64,22 +57,18 @@ lazy_static! {
 impl TaskManager {
     /// 运行任务列表中的第一个任务。
     fn run_first_task(&self) -> ! {
-        // 获取任务管理器的可变引用
+        info!("[kernel] Running first task...");
         let mut inner = self.inner.exclusive_access();
-        // 获取到第一个任务，并将任务状态设置为 `Running`
-        let task0 = &mut inner.tasks[0];
-        task0.task_status = TaskStatus::Running;
-        task0.task_start_time = get_time_ms();
-        // 获取当前第一个任务的上下文指针
-        let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
-        // 释放对任务管理器的可变引用
+        let next_task = &mut inner.tasks[0];
+        next_task.task_status = TaskStatus::Running;
+        next_task.task_start_time = get_time_ms();
+        let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
-        // 对当前的任务上下文进行初始化
         let mut _unused = TaskContext::zero_init();
-        info!("Running first task with context");
-        // 需要对上下文进行切换，当前任务使用一个空任务，接下来要执行的任务使用第一个任务的上下文。
+        info!("[kernel] Running first task: {:?}", next_task_cx_ptr);
+        // before this, we should drop local variables that must be dropped manually
         unsafe {
-            __switch(&mut _unused as *mut TaskContext, next_task_cx_ptr);
+            __switch(&mut _unused as *mut _, next_task_cx_ptr);
         }
         panic!("unreachable in run_first_task!");
     }
@@ -96,18 +85,23 @@ impl TaskManager {
 
     /// 将当前 `Running` 任务的状态标记为 `Exited`，即已退出。
     fn mark_current_exited(&self) {
-        let inner = self.inner.exclusive_access();
+        // 获取任务管理器的可变引用
+        let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
-        let mut current_task_info = inner.tasks[current];
-        current_task_info.task_status = TaskStatus::Exited;
-        current_task_info.task_end_time = get_time_ms();
-        if current_task_info.task_end_time < current_task_info.task_start_time {
+        let current_task = &mut inner.tasks[current];
+        // 将当前任务的状态设置为 `Exited`，并记录任务结束时间
+        current_task.task_status = TaskStatus::Exited;
+        current_task.task_end_time = get_time_ms();
+        // 计算任务的持续时间，并打印相关信息
+        let duration = current_task
+            .task_end_time
+            .saturating_sub(current_task.task_start_time);
+        if current_task.task_end_time < current_task.task_start_time {
             info!("[kernel] Task {} exited with negative duration!", current);
         }
         info!(
             "[kernel] Task {} exited, duration: {} ms",
-            current,
-            current_task_info.task_end_time - current_task_info.task_start_time
+            current, duration
         );
     }
 
@@ -125,28 +119,42 @@ impl TaskManager {
             .find(|id| inner.tasks[*id].task_status == TaskStatus::Ready)
     }
 
-    /// 运行下一个任务
-    ///
-    /// 如果没有下一个任务，则打印信息并关闭系统。
+    /// Get the current 'Running' task's token.
+    fn get_current_token(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        inner.tasks[inner.current_task].get_user_token()
+    }
+
+    /// Get the current 'Running' task's trap contexts.
+    fn get_current_trap_cx(&self) -> &'static mut TrapContext {
+        let inner = self.inner.exclusive_access();
+        inner.tasks[inner.current_task].get_trap_cx()
+    }
+
+    /// Change the current 'Running' task's program break
+    pub fn change_current_program_brk(&self, size: i32) -> Option<usize> {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur].change_program_brk(size)
+    }
+
+    /// Switch current `Running` task to the task we have found,
+    /// or there is no `Ready` task and we can exit with all applications completed
     fn run_next_task(&self) {
-        // 查找下一个任务，有可能当前任务已经是最后一个任务了
         if let Some(next) = self.find_next_task() {
-            // 获取任务管理器的可变引用
             let mut inner = self.inner.exclusive_access();
-            // 获取到当前任务的索引
             let current = inner.current_task;
-            // 将下一个任务的状态设置为 `Running`，并更新当前执行任务索引为下一个任务的索引
             inner.tasks[next].task_status = TaskStatus::Running;
+            inner.tasks[next].task_start_time = get_time_ms();
             inner.current_task = next;
-            // 获取到当前任务和下一个任务的上下文指针
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
             drop(inner);
-            // 切换上下文，从当前任务切换到下一个任务
+            // before this, we should drop local variables that must be dropped manually
             unsafe {
                 __switch(current_task_cx_ptr, next_task_cx_ptr);
             }
-            // 返回到用户模式
+            // go back to user mode
         } else {
             println!("All applications completed!");
             shutdown(false);
@@ -154,34 +162,50 @@ impl TaskManager {
     }
 }
 
-/// run first task
+/// Run the first task in task list.
 pub fn run_first_task() {
     TASK_MANAGER.run_first_task();
 }
 
-/// rust next task
+/// Switch current `Running` task to the task we have found,
+/// or there is no `Ready` task and we can exit with all applications completed
 fn run_next_task() {
     TASK_MANAGER.run_next_task();
 }
 
-/// suspend current task
+/// Change the status of current `Running` task into `Ready`.
 fn mark_current_suspended() {
     TASK_MANAGER.mark_current_suspended();
 }
 
-/// exit current task
+/// Change the status of current `Running` task into `Exited`.
 fn mark_current_exited() {
     TASK_MANAGER.mark_current_exited();
 }
 
-/// suspend current task, then run next task
+/// Suspend the current 'Running' task and run the next task in task list.
 pub fn suspend_current_and_run_next() {
     mark_current_suspended();
     run_next_task();
 }
 
-/// exit current task,  then run next task
+/// Exit the current 'Running' task and run the next task in task list.
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+/// Get the current 'Running' task's token.
+pub fn current_user_token() -> usize {
+    TASK_MANAGER.get_current_token()
+}
+
+/// Get the current 'Running' task's trap contexts.
+pub fn current_trap_cx() -> &'static mut TrapContext {
+    TASK_MANAGER.get_current_trap_cx()
+}
+
+/// Change the current 'Running' task's program break
+pub fn change_program_brk(size: i32) -> Option<usize> {
+    TASK_MANAGER.change_current_program_brk(size)
 }
