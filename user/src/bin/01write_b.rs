@@ -4,21 +4,12 @@
 #[macro_use]
 extern crate user_lib;
 
-use user_lib::yield_;
-
-const WIDTH: usize = 80;
-const HEIGHT: usize = 100;
+use user_lib::sleep;
 
 #[unsafe(no_mangle)]
 fn main() -> i32 {
     println!("Test write_b started!");
-    for i in 0..HEIGHT {
-        for _ in 0..WIDTH {
-            print!("B");
-        }
-        println!(" [{}/{}]", i + 1, HEIGHT);
-        // yield_();
-    }
+    sleep(3000);
     println!("Test write_b OK!");
     0
 }

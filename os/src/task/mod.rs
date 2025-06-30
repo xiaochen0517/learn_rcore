@@ -15,7 +15,7 @@ use task::{TaskControlBlock, TaskStatus};
 use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
 pub use context::TaskContext;
-use log::info;
+use log::{debug, info};
 
 /// 任务管理器
 pub struct TaskManager {
@@ -79,8 +79,8 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         // 获取当前任务的索引
         let current = inner.current_task;
-        // 将当前任务的状态设置为 `Ready`
-        inner.tasks[current].task_status = TaskStatus::Ready;
+        // 将当前任务的状态设置为 `Blocked` 阻塞中
+        inner.tasks[current].task_status = TaskStatus::Blocked;
     }
 
     /// 将当前 `Running` 任务的状态标记为 `Exited`，即已退出。
@@ -93,6 +93,10 @@ impl TaskManager {
         current_task.task_status = TaskStatus::Exited;
         current_task.task_end_time = get_time_ms();
         // 计算任务的持续时间，并打印相关信息
+        debug!(
+            "start time: {}, end time: {}",
+            current_task.task_start_time, current_task.task_end_time
+        );
         let duration = current_task
             .task_end_time
             .saturating_sub(current_task.task_start_time);
@@ -113,10 +117,13 @@ impl TaskManager {
         let inner = self.inner.exclusive_access();
         // 获取当前任务
         let current = inner.current_task;
-        // 从当前任务的下一个开始，循环查找下一个 `Ready` 任务
+        // 从当前任务的下一个开始，循环查找下一个 `Ready` 或者 `Blocked` 任务
         (current + 1..current + self.num_app + 1)
             .map(|id| id % self.num_app)
-            .find(|id| inner.tasks[*id].task_status == TaskStatus::Ready)
+            .find(|id| {
+                inner.tasks[*id].task_status == TaskStatus::Ready
+                    || inner.tasks[*id].task_status == TaskStatus::Blocked
+            })
     }
 
     /// Get the current 'Running' task's token.
@@ -144,8 +151,15 @@ impl TaskManager {
         if let Some(next) = self.find_next_task() {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
+            // 如果下一个任务的状态是 `Ready`，则更新其开始时间
+            if inner.tasks[next].task_status == TaskStatus::Ready {
+                inner.tasks[next].task_start_time = get_time_ms();
+                debug!(
+                    "Set task {} start time to {}",
+                    next, inner.tasks[next].task_start_time
+                );
+            }
             inner.tasks[next].task_status = TaskStatus::Running;
-            inner.tasks[next].task_start_time = get_time_ms();
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;

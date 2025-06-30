@@ -11,7 +11,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
 use lazy_static::*;
-use log::{debug, error, info};
+use log::{debug, info};
 use riscv::register::satp;
 
 unsafe extern "C" {

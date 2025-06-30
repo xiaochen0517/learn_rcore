@@ -33,3 +33,10 @@ pub fn yield_() -> isize {
 pub fn get_time() -> isize {
     sys_get_time()
 }
+pub fn sleep(ms: usize) {
+    let current_timer = get_time();
+    let wait_for = current_timer + ms as isize;
+    while get_time() < wait_for {
+        yield_();
+    }
+}

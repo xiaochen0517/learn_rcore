@@ -9,6 +9,7 @@ pub enum TaskStatus {
     #[allow(dead_code)]
     UnInit, // 未初始化
     Ready,   // 准备运行
+    Blocked, // 阻塞中
     Running, // 正在运行
     Exited,  // 已退出
 }
