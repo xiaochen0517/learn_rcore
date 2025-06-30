@@ -3,6 +3,7 @@ mod switch;
 
 #[allow(clippy::module_inception)]
 mod task;
+mod pid;
 
 use crate::loader::{get_app_data, get_num_app};
 use crate::sbi::shutdown;

@@ -5,6 +5,12 @@ pub fn console_putchar(c: usize) {
     sbi_rt::legacy::console_putchar(c);
 }
 
+/// use sbi call to getchar from console (qemu uart handler)
+pub fn console_getchar() -> usize {
+    #[allow(deprecated)]
+    sbi_rt::legacy::console_getchar()
+}
+
 pub fn shutdown(failure: bool) -> ! {
     use sbi_rt::{NoReason, Shutdown, SystemFailure, system_reset};
     if !failure {

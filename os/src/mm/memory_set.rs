@@ -34,7 +34,6 @@ lazy_static! {
     pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>> =
         Arc::new(unsafe { UPSafeCell::new(MemorySet::new_kernel()) });
 }
-
 /// memory set structure, controls virtual-memory space
 pub struct MemorySet {
     page_table: PageTable,
@@ -49,6 +48,7 @@ impl MemorySet {
             areas: Vec::new(),
         }
     }
+    ///Get pagetable `root_ppn`
     pub fn token(&self) -> usize {
         self.page_table.token()
     }
@@ -66,6 +66,18 @@ impl MemorySet {
             None,
         );
     }
+    ///Remove `MapArea` that starts with `start_vpn`
+    pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
+        if let Some((idx, area)) = self
+            .areas
+            .iter_mut()
+            .enumerate()
+            .find(|(_, area)| area.vpn_range.get_start() == start_vpn)
+        {
+            area.unmap(&mut self.page_table);
+            self.areas.remove(idx);
+        }
+    }
     /// # 添加一个内存映射区域
     ///
     /// 将指定的 MapArea 映射到页表中，并可选地将数据复制到映射区域。
@@ -81,7 +93,6 @@ impl MemorySet {
     /// 映射跳板，跳板是一个特殊的虚拟地址，用于处理用户态和内核态之间的切换。
     /// 其位置会保持在所有虚拟地址空间的最上方。
     fn map_trampoline(&mut self) {
-        // 添加 trampoline 映射
         self.page_table.map(
             VirtAddr::from(TRAMPOLINE).into(),
             PhysAddr::from(strampoline as usize).into(),
@@ -177,7 +188,7 @@ impl MemorySet {
         // 映射跳板块
         memory_set.map_trampoline();
         // 解析 ELF 文件
-        let elf = xmas_elf::ElfFile::new(elf_data).unwrap();
+        let elf = xmas_elf::ElfFile::new(&elf_data).unwrap();
         // 获取 ELF 文件头
         let elf_header = elf.header;
         // 检查 ELF 文件的魔数
@@ -235,17 +246,7 @@ impl MemorySet {
             ),
             None,
         );
-        // used in sbrk
-        memory_set.push(
-            MapArea::new(
-                user_stack_top.into(),
-                user_stack_top.into(),
-                MapType::Framed,
-                MapPermission::R | MapPermission::W | MapPermission::U,
-            ),
-            None,
-        );
-        // 映射 TrapContext，位置在跳板点下方一个页中
+        // map TrapContext
         memory_set.push(
             MapArea::new(
                 TRAP_CONTEXT.into(),
@@ -261,6 +262,26 @@ impl MemorySet {
             elf.header.pt2.entry_point() as usize,
         )
     }
+    ///Clone a same `MemorySet`
+    pub fn from_existed_user(user_space: &Self) -> Self {
+        let mut memory_set = Self::new_bare();
+        // map trampoline
+        memory_set.map_trampoline();
+        // copy data sections/trap_context/user_stack
+        for area in user_space.areas.iter() {
+            let new_area = MapArea::from_another(area);
+            memory_set.push(new_area, None);
+            // copy data from another space
+            for vpn in area.vpn_range {
+                let src_ppn = user_space.translate(vpn).unwrap().ppn();
+                let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
+                dst_ppn
+                    .get_bytes_array()
+                    .copy_from_slice(src_ppn.get_bytes_array());
+            }
+        }
+        memory_set
+    }
     /// # 激活 SV39 页表
     ///
     /// 激活虚拟内存分页，并刷新 TLB。
@@ -273,37 +294,16 @@ impl MemorySet {
             asm!("sfence.vma");
         }
     }
+    ///Translate throuth pagetable
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
     }
-    #[allow(unused)]
-    pub fn shrink_to(&mut self, start: VirtAddr, new_end: VirtAddr) -> bool {
-        if let Some(area) = self
-            .areas
-            .iter_mut()
-            .find(|area| area.vpn_range.get_start() == start.floor())
-        {
-            area.shrink_to(&mut self.page_table, new_end.ceil());
-            true
-        } else {
-            false
-        }
-    }
-    #[allow(unused)]
-    pub fn append_to(&mut self, start: VirtAddr, new_end: VirtAddr) -> bool {
-        if let Some(area) = self
-            .areas
-            .iter_mut()
-            .find(|area| area.vpn_range.get_start() == start.floor())
-        {
-            area.append_to(&mut self.page_table, new_end.ceil());
-            true
-        } else {
-            false
-        }
+    ///Remove all `MapArea`
+    pub fn recycle_data_pages(&mut self) {
+        //*self = Self::new_bare();
+        self.areas.clear();
     }
 }
-
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
     vpn_range: VPNRange,
@@ -329,6 +329,14 @@ impl MapArea {
             data_frames: BTreeMap::new(),
             map_type,
             map_perm,
+        }
+    }
+    pub fn from_another(another: &Self) -> Self {
+        Self {
+            vpn_range: VPNRange::new(another.vpn_range.get_start(), another.vpn_range.get_end()),
+            data_frames: BTreeMap::new(),
+            map_type: another.map_type,
+            map_perm: another.map_perm,
         }
     }
     /// # 通过指定类型映射并创建一个虚拟页
@@ -376,20 +384,6 @@ impl MapArea {
             self.unmap_one(page_table, vpn);
         }
     }
-    #[allow(unused)]
-    pub fn shrink_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
-        for vpn in VPNRange::new(new_end, self.vpn_range.get_end()) {
-            self.unmap_one(page_table, vpn)
-        }
-        self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
-    }
-    #[allow(unused)]
-    pub fn append_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
-        for vpn in VPNRange::new(self.vpn_range.get_end(), new_end) {
-            self.map_one(page_table, vpn)
-        }
-        self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
-    }
     /// # 复制数据到 MapArea
     ///
     /// 将指定的数据复制到 MapArea 中的物理内存页中。
@@ -427,9 +421,13 @@ pub enum MapType {
 bitflags! {
     /// map permission corresponding to that in pte: `R W X U`
     pub struct MapPermission: u8 {
+        ///Readable
         const R = 1 << 1;
+        ///Writable
         const W = 1 << 2;
+        ///Excutable
         const X = 1 << 3;
+        ///Accessible in U mode
         const U = 1 << 4;
     }
 }
