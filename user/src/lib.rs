@@ -94,3 +94,7 @@ pub fn waitpid(pid: usize, exit_code: &mut i32) -> isize {
         }
     }
 }
+
+pub fn force_shutdown() -> isize {
+    sys_force_shutdown()
+}

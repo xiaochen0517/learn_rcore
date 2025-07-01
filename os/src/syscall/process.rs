@@ -106,3 +106,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
     }
     // ---- release current PCB lock automatically
 }
+
+pub fn sys_force_shutdown() -> isize {
+    panic!("User requested force shutdown!");
+}
