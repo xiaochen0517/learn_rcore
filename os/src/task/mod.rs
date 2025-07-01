@@ -15,7 +15,7 @@ use crate::loader::get_app_data_by_name;
 use crate::sbi::shutdown;
 use lazy_static::*;
 use switch::__switch;
-use task::{TaskControlBlock, TaskStatus};
+pub use task::{TaskControlBlock, TaskStatus};
 
 pub use crate::task::processor::{
     current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,

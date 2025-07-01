@@ -1,11 +1,13 @@
 use crate::loader::get_app_data_by_name;
 use crate::mm::{translated_refmut, translated_str};
 use crate::task::{
-    add_task, current_task, current_user_token, exit_current_and_run_next,
-    suspend_current_and_run_next,
+    add_task, current_task, current_user_token, exit_current_and_run_next, suspend_current_and_run_next,
+    TaskStatus,
 };
 use crate::timer::get_time_ms;
+use alloc::string::ToString;
 use alloc::sync::Arc;
+use log::debug;
 
 /// 任务退出
 pub fn sys_exit(exit_code: i32) -> ! {
@@ -36,6 +38,15 @@ pub fn sys_getpid() -> isize {
 pub fn sys_fork() -> isize {
     let current_task = current_task().unwrap();
     let new_task = current_task.fork();
+    let task_status_str = match new_task.inner_exclusive_access().task_status {
+        TaskStatus::Ready => "Ready",
+        TaskStatus::Running => "Running",
+        TaskStatus::Zombie => "Zombie",
+    };
+    debug!(
+        "Fork New task status {:?}, New task pid {:?}, Parent task pid {:?}",
+        task_status_str, new_task.pid.0, current_task.pid.0
+    );
     let new_pid = new_task.pid.0;
     // modify trap context of new_task, because it returns immediately after switching
     let trap_cx = new_task.inner_exclusive_access().get_trap_cx();
