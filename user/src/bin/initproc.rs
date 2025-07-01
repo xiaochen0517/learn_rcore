@@ -8,6 +8,7 @@ use user_lib::{exec, fork, wait, yield_};
 
 #[unsafe(no_mangle)]
 fn main() -> i32 {
+    println!("Enter initproc -----------");
     if fork() == 0 {
         println!("run user_shell!");
         exec("user_shell\0");
