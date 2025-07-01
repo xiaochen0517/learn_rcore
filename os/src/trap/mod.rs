@@ -63,11 +63,11 @@ pub fn trap_handler() -> ! {
                 "[kernel] PageFault in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
                 stval, cx.sepc
             );
-            exit_current_and_run_next();
+            exit_current_and_run_next(-2);
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             println!("[kernel] IllegalInstruction in application, kernel killed it.");
-            exit_current_and_run_next();
+            exit_current_and_run_next(-3);
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             set_next_trigger();

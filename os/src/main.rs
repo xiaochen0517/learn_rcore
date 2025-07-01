@@ -78,12 +78,14 @@ fn rust_main() {
     mm::init();
     info!("[kernel] back to world!");
     mm::remap_test();
+    task::add_initproc();
     trap::init();
     info!("[kernel] trap initialized!");
     trap::enable_timer_interrupt();
     info!("[kernel] timer interrupt enabled!");
     timer::set_next_trigger();
     info!("[kernel] next timer trigger set!");
-    task::run_first_task();
+    loader::list_apps();
+    task::run_tasks();
     panic!("Unreachable in rust_main!");
 }

@@ -1,226 +1,106 @@
 mod context;
 mod switch;
 
+mod manager;
+mod pid;
+mod processor;
 #[allow(clippy::module_inception)]
 mod task;
-mod pid;
 
-use crate::loader::{get_app_data, get_num_app};
+use alloc::sync::Arc;
+pub use manager::{add_task, fetch_task};
+pub use pid::{KernelStack, PidHandle, pid_alloc};
+
+use crate::loader::get_app_data_by_name;
 use crate::sbi::shutdown;
-use crate::sync::UPSafeCell;
-use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
 use task::{TaskControlBlock, TaskStatus};
 
-use crate::timer::get_time_ms;
-use crate::trap::TrapContext;
+pub use crate::task::processor::{
+    current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
+};
 pub use context::TaskContext;
-use log::{debug, info};
-
-/// 任务管理器
-pub struct TaskManager {
-    num_app: usize,
-    inner: UPSafeCell<TaskManagerInner>,
-}
-
-/// 任务管理器单例
-struct TaskManagerInner {
-    /// 任务列表
-    tasks: Vec<TaskControlBlock>,
-    /// 当前运行的任务索引
-    current_task: usize,
-}
-
-lazy_static! {
-    /// Global variable: TASK_MANAGER
-    pub static ref TASK_MANAGER: TaskManager = {
-        info!("[kernel] init TASK_MANAGER");
-        let num_app = get_num_app();
-        info!("[kernel] num_app = {}", num_app);
-        let mut tasks: Vec<TaskControlBlock> = Vec::new();
-        for i in 0..num_app {
-            tasks.push(TaskControlBlock::new(get_app_data(i), i));
-        }
-        info!("[kernel] TaskControlBlock created.");
-        TaskManager {
-            num_app,
-            inner: unsafe {
-                UPSafeCell::new(TaskManagerInner {
-                    tasks,
-                    current_task: 0,
-                })
-            },
-        }
-    };
-}
-
-impl TaskManager {
-    /// 运行任务列表中的第一个任务。
-    fn run_first_task(&self) -> ! {
-        info!("[kernel] Running first task...");
-        let mut inner = self.inner.exclusive_access();
-        let next_task = &mut inner.tasks[0];
-        next_task.task_status = TaskStatus::Running;
-        next_task.task_start_time = get_time_ms();
-        let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
-        drop(inner);
-        let mut _unused = TaskContext::zero_init();
-        info!("[kernel] Running first task: {:?}", next_task_cx_ptr);
-        // before this, we should drop local variables that must be dropped manually
-        unsafe {
-            __switch(&mut _unused as *mut _, next_task_cx_ptr);
-        }
-        panic!("unreachable in run_first_task!");
-    }
-
-    /// 将当前 `Running` 任务的状态标记为 `Ready`，即准备就绪。
-    fn mark_current_suspended(&self) {
-        // 获取任务管理器的可变引用
-        let mut inner = self.inner.exclusive_access();
-        // 获取当前任务的索引
-        let current = inner.current_task;
-        // 将当前任务的状态设置为 `Blocked` 阻塞中
-        inner.tasks[current].task_status = TaskStatus::Blocked;
-    }
-
-    /// 将当前 `Running` 任务的状态标记为 `Exited`，即已退出。
-    fn mark_current_exited(&self) {
-        // 获取任务管理器的可变引用
-        let mut inner = self.inner.exclusive_access();
-        let current = inner.current_task;
-        let current_task = &mut inner.tasks[current];
-        // 将当前任务的状态设置为 `Exited`，并记录任务结束时间
-        current_task.task_status = TaskStatus::Exited;
-        current_task.task_end_time = get_time_ms();
-        // 计算任务的持续时间，并打印相关信息
-        debug!(
-            "start time: {}, end time: {}",
-            current_task.task_start_time, current_task.task_end_time
-        );
-        let duration = current_task
-            .task_end_time
-            .saturating_sub(current_task.task_start_time);
-        if current_task.task_end_time < current_task.task_start_time {
-            info!("[kernel] Task {} exited with negative duration!", current);
-        }
-        info!(
-            "[kernel] Task {} exited, duration: {} ms",
-            current, duration
-        );
-    }
-
-    /// 发现下一个 `Ready` 任务
-    ///
-    /// 如果没有找到 `Ready` 任务，则返回 `None`。
-    fn find_next_task(&self) -> Option<usize> {
-        // 获取到任务管理器
-        let inner = self.inner.exclusive_access();
-        // 获取当前任务
-        let current = inner.current_task;
-        // 从当前任务的下一个开始，循环查找下一个 `Ready` 或者 `Blocked` 任务
-        (current + 1..current + self.num_app + 1)
-            .map(|id| id % self.num_app)
-            .find(|id| {
-                inner.tasks[*id].task_status == TaskStatus::Ready
-                    || inner.tasks[*id].task_status == TaskStatus::Blocked
-            })
-    }
-
-    /// Get the current 'Running' task's token.
-    fn get_current_token(&self) -> usize {
-        let inner = self.inner.exclusive_access();
-        inner.tasks[inner.current_task].get_user_token()
-    }
-
-    /// Get the current 'Running' task's trap contexts.
-    fn get_current_trap_cx(&self) -> &'static mut TrapContext {
-        let inner = self.inner.exclusive_access();
-        inner.tasks[inner.current_task].get_trap_cx()
-    }
-
-    /// Change the current 'Running' task's program break
-    pub fn change_current_program_brk(&self, size: i32) -> Option<usize> {
-        let mut inner = self.inner.exclusive_access();
-        let cur = inner.current_task;
-        inner.tasks[cur].change_program_brk(size)
-    }
-
-    /// Switch current `Running` task to the task we have found,
-    /// or there is no `Ready` task and we can exit with all applications completed
-    fn run_next_task(&self) {
-        if let Some(next) = self.find_next_task() {
-            let mut inner = self.inner.exclusive_access();
-            let current = inner.current_task;
-            // 如果下一个任务的状态是 `Ready`，则更新其开始时间
-            if inner.tasks[next].task_status == TaskStatus::Ready {
-                inner.tasks[next].task_start_time = get_time_ms();
-                debug!(
-                    "Set task {} start time to {}",
-                    next, inner.tasks[next].task_start_time
-                );
-            }
-            inner.tasks[next].task_status = TaskStatus::Running;
-            inner.current_task = next;
-            let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
-            let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
-            drop(inner);
-            // before this, we should drop local variables that must be dropped manually
-            unsafe {
-                __switch(current_task_cx_ptr, next_task_cx_ptr);
-            }
-            // go back to user mode
-        } else {
-            println!("All applications completed!");
-            shutdown(false);
-        }
-    }
-}
-
-/// Run the first task in task list.
-pub fn run_first_task() {
-    TASK_MANAGER.run_first_task();
-}
-
-/// Switch current `Running` task to the task we have found,
-/// or there is no `Ready` task and we can exit with all applications completed
-fn run_next_task() {
-    TASK_MANAGER.run_next_task();
-}
-
-/// Change the status of current `Running` task into `Ready`.
-fn mark_current_suspended() {
-    TASK_MANAGER.mark_current_suspended();
-}
-
-/// Change the status of current `Running` task into `Exited`.
-fn mark_current_exited() {
-    TASK_MANAGER.mark_current_exited();
-}
 
 /// Suspend the current 'Running' task and run the next task in task list.
 pub fn suspend_current_and_run_next() {
-    mark_current_suspended();
-    run_next_task();
+    // There must be an application running.
+    let task = take_current_task().unwrap();
+
+    // ---- access current TCB exclusively
+    let mut task_inner = task.inner_exclusive_access();
+    let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
+    // Change status to Ready
+    task_inner.task_status = TaskStatus::Ready;
+    drop(task_inner);
+    // ---- release current PCB
+
+    // push back to ready queue.
+    add_task(task);
+    // jump to scheduling cycle
+    schedule(task_cx_ptr);
 }
+
+/// pid of usertests app in make run TEST=1
+pub const IDLE_PID: usize = 0;
 
 /// Exit the current 'Running' task and run the next task in task list.
-pub fn exit_current_and_run_next() {
-    mark_current_exited();
-    run_next_task();
+pub fn exit_current_and_run_next(exit_code: i32) {
+    // take from Processor
+    let task = take_current_task().unwrap();
+
+    let pid = task.getpid();
+    if pid == IDLE_PID {
+        println!(
+            "[kernel] Idle process exit with exit_code {} ...",
+            exit_code
+        );
+        if exit_code != 0 {
+            //crate::sbi::shutdown(255); //255 == -1 for err hint
+            shutdown(true)
+        } else {
+            //crate::sbi::shutdown(0); //0 for success hint
+            shutdown(false)
+        }
+    }
+
+    // **** access current TCB exclusively
+    let mut inner = task.inner_exclusive_access();
+    // Change status to Zombie
+    inner.task_status = TaskStatus::Zombie;
+    // Record exit code
+    inner.exit_code = exit_code;
+    // do not move to its parent but under initproc
+
+    // ++++++ access initproc TCB exclusively
+    {
+        let mut initproc_inner = INITPROC.inner_exclusive_access();
+        for child in inner.children.iter() {
+            child.inner_exclusive_access().parent = Some(Arc::downgrade(&INITPROC));
+            initproc_inner.children.push(child.clone());
+        }
+    }
+    // ++++++ release parent PCB
+
+    inner.children.clear();
+    // deallocate user space
+    inner.memory_set.recycle_data_pages();
+    drop(inner);
+    // **** release current PCB
+    // drop task manually to maintain rc correctly
+    drop(task);
+    // we do not have to save task context
+    let mut _unused = TaskContext::zero_init();
+    schedule(&mut _unused as *mut _);
 }
 
-/// Get the current 'Running' task's token.
-pub fn current_user_token() -> usize {
-    TASK_MANAGER.get_current_token()
+lazy_static! {
+    ///Globle process that init user shell
+    pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new(TaskControlBlock::new(
+        get_app_data_by_name("initproc").unwrap()
+    ));
 }
-
-/// Get the current 'Running' task's trap contexts.
-pub fn current_trap_cx() -> &'static mut TrapContext {
-    TASK_MANAGER.get_current_trap_cx()
-}
-
-/// Change the current 'Running' task's program break
-pub fn change_program_brk(size: i32) -> Option<usize> {
-    TASK_MANAGER.change_current_program_brk(size)
+///Add init process to the manager
+pub fn add_initproc() {
+    add_task(INITPROC.clone());
 }
