@@ -5,19 +5,23 @@ use super::{
 use crate::BLOCK_SZ;
 use alloc::sync::Arc;
 use spin::Mutex;
-///An easy file system on block
+/// 简易文件系统
 pub struct EasyFileSystem {
-    ///Real device
+    /// 硬盘设备
     pub block_device: Arc<dyn BlockDevice>,
-    ///Inode bitmap
+    /// 索引节点位图
     pub inode_bitmap: Bitmap,
-    ///Data bitmap
+    /// 数据区域位图
     pub data_bitmap: Bitmap,
+    /// 索引节点区域起始块编号
     inode_area_start_block: u32,
+    /// 数据区域起始块编号
     data_area_start_block: u32,
 }
 
+/// 单个块的大小
 type DataBlock = [u8; BLOCK_SZ];
+
 /// An easy fs over a block device
 impl EasyFileSystem {
     /// A data block of block size
@@ -26,19 +30,27 @@ impl EasyFileSystem {
         total_blocks: u32,
         inode_bitmap_blocks: u32,
     ) -> Arc<Mutex<Self>> {
-        // calculate block size of areas & create bitmaps
+        // 创建索引节点位图
         let inode_bitmap = Bitmap::new(1, inode_bitmap_blocks as usize);
+        // 位图大小
         let inode_num = inode_bitmap.maximum();
+        // 索引区域大小
         let inode_area_blocks =
             ((inode_num * core::mem::size_of::<DiskInode>() + BLOCK_SZ - 1) / BLOCK_SZ) as u32;
+        // 索引总大小
         let inode_total_blocks = inode_bitmap_blocks + inode_area_blocks;
+        // 剩余部分为数据区域总大小
         let data_total_blocks = total_blocks - 1 - inode_total_blocks;
+        // 当前数据区域的位图大小为剩余块除以 4097 (每 4096 个数据块需要一个位图块)
         let data_bitmap_blocks = (data_total_blocks + 4096) / 4097;
+        // 将剩余的数据总块大小减去数据位图块占用，剩余为数据区域块大小
         let data_area_blocks = data_total_blocks - data_bitmap_blocks;
+        // 创建数据区域位图
         let data_bitmap = Bitmap::new(
             (1 + inode_total_blocks) as usize,
             data_bitmap_blocks as usize,
         );
+        // 创建 EasyFileSystem 实例
         let mut efs = Self {
             block_device: Arc::clone(&block_device),
             inode_bitmap,
@@ -46,7 +58,7 @@ impl EasyFileSystem {
             inode_area_start_block: 1 + inode_bitmap_blocks,
             data_area_start_block: 1 + inode_total_blocks + data_bitmap_blocks,
         };
-        // clear all blocks
+        // 清理所有的块，将所有块初始化为 0
         for i in 0..total_blocks {
             get_block_cache(i as usize, Arc::clone(&block_device))
                 .lock()
@@ -56,7 +68,7 @@ impl EasyFileSystem {
                     }
                 });
         }
-        // initialize SuperBlock
+        // 写入超级块
         get_block_cache(0, Arc::clone(&block_device)).lock().modify(
             0,
             |super_block: &mut SuperBlock| {
@@ -69,7 +81,7 @@ impl EasyFileSystem {
                 );
             },
         );
-        // write back immediately
+        // 写入第一个文件夹索引块数据
         // create a inode for root node "/"
         assert_eq!(efs.alloc_inode(), 0);
         let (root_inode_block_id, root_inode_offset) = efs.get_disk_inode_pos(0);
@@ -78,6 +90,7 @@ impl EasyFileSystem {
             .modify(root_inode_offset, |disk_inode: &mut DiskInode| {
                 disk_inode.initialize(DiskInodeType::Directory);
             });
+        // 将输入同步到硬盘
         block_cache_sync_all();
         Arc::new(Mutex::new(efs))
     }
