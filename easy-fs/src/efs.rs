@@ -4,6 +4,7 @@ use super::{
 };
 use crate::BLOCK_SZ;
 use alloc::sync::Arc;
+use log::debug;
 use spin::Mutex;
 /// 简易文件系统
 pub struct EasyFileSystem {
@@ -96,6 +97,7 @@ impl EasyFileSystem {
     }
     /// Open a block device as a filesystem
     pub fn open(block_device: Arc<dyn BlockDevice>) -> Arc<Mutex<Self>> {
+        debug!("Opening BlockDevice as EasyFileSystem");
         // read SuperBlock
         get_block_cache(0, Arc::clone(&block_device))
             .lock()

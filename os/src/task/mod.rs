@@ -11,7 +11,7 @@ use alloc::sync::Arc;
 pub use manager::{add_task, fetch_task};
 pub use pid::{KernelStack, PidHandle, pid_alloc};
 
-use crate::loader::get_app_data_by_name;
+use crate::fs::{OpenFlags, open_file};
 use crate::sbi::shutdown;
 use lazy_static::*;
 use switch::__switch;
@@ -96,9 +96,11 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 
 lazy_static! {
     ///Globle process that init user shell
-    pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new(TaskControlBlock::new(
-        get_app_data_by_name("initproc").unwrap()
-    ));
+    pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new({
+        let inode = open_file("initproc", OpenFlags::RDONLY).unwrap();
+        let v = inode.read_all();
+        TaskControlBlock::new(v.as_slice())
+    });
 }
 ///Add init process to the manager
 pub fn add_initproc() {

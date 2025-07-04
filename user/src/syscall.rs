@@ -14,6 +14,8 @@ fn syscall(id: usize, args: [usize; 3]) -> isize {
     ret
 }
 
+const SYSCALL_OPEN: usize = 56;
+const SYSCALL_CLOSE: usize = 57;
 const SYSCALL_READ: usize = 63;
 const SYSCALL_WRITE: usize = 64;
 const SYSCALL_EXIT: usize = 93;
@@ -31,12 +33,21 @@ pub fn sys_read(fd: usize, buffer: &mut [u8]) -> isize {
     )
 }
 
+pub fn sys_open(path: &str, flags: u32) -> isize {
+    syscall(SYSCALL_OPEN, [path.as_ptr() as usize, flags as usize, 0])
+}
+
+pub fn sys_close(fd: usize) -> isize {
+    syscall(SYSCALL_CLOSE, [fd, 0, 0])
+}
+
 pub fn sys_write(fd: usize, buf: &[u8]) -> isize {
     syscall(SYSCALL_WRITE, [fd, buf.as_ptr() as usize, buf.len()])
 }
 
 pub fn sys_exit(code: i32) -> isize {
-    syscall(SYSCALL_EXIT, [code as usize, 0, 0])
+    syscall(SYSCALL_EXIT, [code as usize, 0, 0]);
+    panic!("sys_exit never returns!");
 }
 
 pub fn sys_yield() -> isize {

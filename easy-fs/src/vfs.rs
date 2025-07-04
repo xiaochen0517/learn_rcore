@@ -5,7 +5,9 @@ use super::{
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use log::debug;
 use spin::{Mutex, MutexGuard};
+
 /// Virtual filesystem layer over easy-fs
 pub struct Inode {
     block_id: usize,
@@ -22,6 +24,10 @@ impl Inode {
         fs: Arc<Mutex<EasyFileSystem>>,
         block_device: Arc<dyn BlockDevice>,
     ) -> Self {
+        debug!(
+            "Creating inode with block_id: {}, block_offset: {}",
+            block_id, block_offset
+        );
         Self {
             block_id: block_id as usize,
             block_offset,
@@ -140,6 +146,7 @@ impl Inode {
     }
     /// List inodes under current inode
     pub fn ls(&self) -> Vec<String> {
+        debug!("Listing inodes under inode: {:?}", self.block_id);
         let _fs = self.fs.lock();
         self.read_disk_inode(|disk_inode| {
             let file_count = (disk_inode.size as usize) / DIRENT_SZ;

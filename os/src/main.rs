@@ -10,8 +10,9 @@ extern crate bitflags;
 mod console;
 mod boards;
 mod config;
+mod drivers;
+mod fs;
 mod lang_items;
-mod loader;
 pub mod logging;
 mod mm;
 mod sbi;
@@ -21,11 +22,11 @@ pub mod task;
 mod timer;
 pub mod trap;
 
+use crate::drivers::block::block_device_test;
 use core::arch::global_asm;
 use log::{debug, error, info, trace, warn};
 
 global_asm!(include_str!("entry.asm"));
-global_asm!(include_str!("link_app.S"));
 
 unsafe extern "C" {
     fn stext(); // begin addr of text segment
@@ -41,9 +42,10 @@ unsafe extern "C" {
 }
 
 fn clear_bss() {
-    (sbss as usize..ebss as usize).for_each(|a| unsafe {
-        (a as *mut u8).write_volatile(0);
-    })
+    unsafe {
+        core::slice::from_raw_parts_mut(sbss as usize as *mut u8, ebss as usize - sbss as usize)
+            .fill(0);
+    }
 }
 
 fn print_boot_info() {
@@ -76,16 +78,12 @@ fn rust_main() {
     print_boot_info();
     info!("[kernel] Hello, world!");
     mm::init();
-    info!("[kernel] back to world!");
     mm::remap_test();
-    task::add_initproc();
     trap::init();
-    info!("[kernel] trap initialized!");
     trap::enable_timer_interrupt();
-    info!("[kernel] timer interrupt enabled!");
     timer::set_next_trigger();
-    info!("[kernel] next timer trigger set!");
-    loader::list_apps();
+    fs::list_apps();
+    task::add_initproc();
     task::run_tasks();
     panic!("Unreachable in rust_main!");
 }

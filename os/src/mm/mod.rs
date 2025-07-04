@@ -5,10 +5,13 @@ pub mod memory_set;
 pub mod page_table;
 
 pub use address::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
-use address::{StepByOne, VPNRange};
-pub use frame_allocator::{FrameTracker, frame_alloc};
-pub use memory_set::{KERNEL_SPACE, MemorySet, MapPermission, remap_test};
-pub use page_table::{PTEFlags, PageTable, PageTableEntry, translated_str, translated_refmut};
+pub use address::{StepByOne, VPNRange};
+pub use frame_allocator::{FrameTracker, frame_alloc, frame_dealloc};
+pub use memory_set::{KERNEL_SPACE, MapPermission, MemorySet, kernel_token, remap_test};
+pub use page_table::{
+    PTEFlags, PageTable, PageTableEntry, UserBuffer, translated_byte_buffer, translated_refmut,
+    translated_str,
+};
 
 /// initiate heap allocator, frame allocator and kernel space
 pub fn init() {
