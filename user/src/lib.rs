@@ -11,7 +11,6 @@ mod syscall;
 
 use buddy_system_allocator::LockedHeap;
 use core::ptr::addr_of_mut;
-use bitflags::bitflags;
 use syscall::*;
 
 const USER_HEAP_SIZE: usize = 16384;
@@ -112,4 +111,8 @@ pub fn waitpid(pid: usize, exit_code: &mut i32) -> isize {
             exit_pid => return exit_pid,
         }
     }
+}
+
+pub fn syscall_test(arg1: usize, arg2: usize, arg3: usize) -> isize {
+    sys_test(arg1, arg2, arg3)
 }

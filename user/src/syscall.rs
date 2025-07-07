@@ -26,6 +26,12 @@ const SYSCALL_FORK: usize = 220;
 const SYSCALL_WAITPID: usize = 260;
 const SYSCALL_EXEC: usize = 221;
 
+const SYSCALL_TEST: usize = 1000;
+
+pub fn sys_test(arg1: usize, arg2: usize, arg3: usize) -> isize {
+    syscall(SYSCALL_TEST, [arg1, arg2, arg3])
+}
+
 pub fn sys_read(fd: usize, buffer: &mut [u8]) -> isize {
     syscall(
         SYSCALL_READ,

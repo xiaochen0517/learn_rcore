@@ -10,10 +10,15 @@ const SYSCALL_FORK: usize = 220;
 const SYSCALL_EXEC: usize = 221;
 const SYSCALL_WAITPID: usize = 260;
 
+const SYSCALL_TEST: usize = 1000; // Custom syscall for testing
+
 mod fs;
 mod process;
 
+use crate::mm::translated_str;
+use crate::task::{current_task, current_user_token};
 use fs::*;
+use log::debug;
 use process::*;
 
 /// handle syscall exception with `syscall_id` and other arguments
@@ -30,6 +35,21 @@ pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
         SYSCALL_FORK => sys_fork(),
         SYSCALL_EXEC => sys_exec(args[0] as *const u8),
         SYSCALL_WAITPID => sys_waitpid(args[0] as isize, args[1] as *mut i32),
+        SYSCALL_TEST => syscall_test(args[0], args[1], args[2]),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
+}
+
+pub fn syscall_test(arg1: usize, arg2: usize, arg3: usize) -> isize {
+    debug!(
+        "[kernel] syscall_test called with args: {}, {}, {}",
+        arg1, arg2, arg3
+    );
+    let path = arg1 as *const u8;
+    let flags = arg2 as u32;
+    let task = current_task().unwrap();
+    let token = current_user_token();
+    let path = translated_str(token, path);
+    crate::fs::inode::ROOT_INODE.find_by_path(path.as_str());
+    0
 }

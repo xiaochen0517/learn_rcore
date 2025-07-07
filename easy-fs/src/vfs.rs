@@ -1,3 +1,5 @@
+extern crate alloc;
+
 use super::{
     block_cache_sync_all, get_block_cache, BlockDevice, DirEntry, DiskInode, DiskInodeType,
     EasyFileSystem, DIRENT_SZ,
@@ -5,7 +7,8 @@ use super::{
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use log::debug;
+use log::{debug, error};
+use regex_automata::meta::Regex;
 use spin::{Mutex, MutexGuard};
 
 /// Virtual filesystem layer over easy-fs
@@ -78,6 +81,44 @@ impl Inode {
                 ))
             })
         })
+    }
+    /// # 通过多级绝对路径获取节点
+    ///
+    /// 此方法只接受绝对路径，且路径必须以 `/` 开头。
+    ///
+    /// 可以用于查找文件或者目录。
+    pub fn find_by_path(&self, abs_path: &str) -> Option<Arc<Inode>> {
+        let abs_path = abs_path.trim();
+        debug!("find_by_path: {}", abs_path);
+        if !is_absolute_path(abs_path) {
+            error!("path must be absolute");
+            return None;
+        }
+        // 分割路径
+        debug!("start splitting path");
+        let path_parts: Vec<&str> = abs_path.trim_start_matches('/').split('/').collect();
+        debug!("path parts: {:?}", path_parts);
+        // 遍历路径，逐级查找
+        let mut current = Arc::new(Self {
+            block_id: self.block_id.clone(),
+            block_offset: self.block_offset.clone(),
+            fs: self.fs.clone(),
+            block_device: self.block_device.clone(),
+        });
+        // 遍历路径，逐级查找
+        for part in path_parts {
+            debug!("search part: {}", part);
+            match current.find(part) {
+                Some(next_inode) => {
+                    current = next_inode;
+                }
+                None => {
+                    debug!("Cannot find path part: {}", part);
+                    return None;
+                }
+            }
+        }
+        Some(current)
     }
     /// Increase the size of a disk inode
     fn increase_size(
@@ -190,4 +231,32 @@ impl Inode {
         });
         block_cache_sync_all();
     }
+}
+
+fn is_absolute_path(path: &str) -> bool {
+    if !path.starts_with("/") {
+        error!("path must start with '/'");
+        return false;
+    }
+    // 使用斜杠分割路径
+    let path_parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+    // 检查每个部分是否符合命名规则，使用下标获取，在最后一个部分使用文件名检查（即可能有 '.' 字符）
+    let path_name_regex = Regex::new(r"^[A-Za-z][A-Za-z0-9_\-]*$").unwrap(); // 目录名只能包含字母、数字、下划线和短横线
+    let file_name_regex = Regex::new(r"^[A-Za-z][A-Za-z0-9_\-.]*$").unwrap(); // 文件名可以包含字母、数字、下划线、短横线和点
+    for (i, part) in path_parts.iter().enumerate() {
+        debug!("split checking index: {}, part: {}", i, part);
+        if i == path_parts.len() - 1 {
+            if !file_name_regex.is_match(*part) {
+                error!("Invalid file name: {}", part);
+                return false;
+            }
+        } else {
+            // 其他部分是目录名
+            if !path_name_regex.is_match(*part) {
+                error!("Invalid directory name: {}", part);
+                return false;
+            }
+        }
+    }
+    true
 }

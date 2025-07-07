@@ -1,5 +1,5 @@
 //! File system in os
-mod inode;
+pub(crate) mod inode;
 mod stdio;
 
 use crate::mm::UserBuffer;

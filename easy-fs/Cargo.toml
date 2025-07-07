@@ -10,6 +10,8 @@ edition = "2018"
 spin = "0.7.0"
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 log = "0.4.27"
+#regex = { version = "1.11.1", default-features = false, features = [] }
+regex-automata = { version = "0.4.9", default-features = false, features = ["alloc", "meta"] }
 
 [profile.release]
 debug = true
