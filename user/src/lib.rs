@@ -9,9 +9,9 @@ extern crate bitflags;
 mod lang_items;
 mod syscall;
 
+use bitflags::bitflags;
 use buddy_system_allocator::LockedHeap;
 use core::ptr::addr_of_mut;
-use bitflags::bitflags;
 use syscall::*;
 
 const USER_HEAP_SIZE: usize = 16384;
@@ -53,11 +53,17 @@ bitflags! {
     }
 }
 
+pub fn dup(fd: usize) -> isize {
+    sys_dup(fd)
+}
 pub fn open(path: &str, flags: OpenFlags) -> isize {
     sys_open(path, flags.bits)
 }
 pub fn close(fd: usize) -> isize {
     sys_close(fd)
+}
+pub fn pipe(pipe_fd: &mut [usize]) -> isize {
+    sys_pipe(pipe_fd)
 }
 pub fn read(fd: usize, buf: &mut [u8]) -> isize {
     sys_read(fd, buf)
@@ -101,7 +107,6 @@ pub fn wait(exit_code: &mut i32) -> isize {
         }
     }
 }
-
 pub fn waitpid(pid: usize, exit_code: &mut i32) -> isize {
     loop {
         match sys_waitpid(pid as isize, exit_code as *mut _) {
