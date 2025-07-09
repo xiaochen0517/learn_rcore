@@ -114,6 +114,7 @@ pub fn main() -> i32 {
                         // create pipes
                         let mut pipes_fd: Vec<[usize; 2]> = Vec::new();
                         if !process_arguments_list.is_empty() {
+                            // 在进程数量大于 1 时创建管道，将所有管道的读端和写端存储在 pipes_fd 中
                             for _ in 0..process_arguments_list.len() - 1 {
                                 let mut pipe_fd = [0usize; 2];
                                 pipe(&mut pipe_fd);
@@ -155,24 +156,31 @@ pub fn main() -> i32 {
                                     assert_eq!(dup(output_fd), 1);
                                     close(output_fd);
                                 }
-                                // receive input from the previous process
+                                // 当前进程不是第一个进程时，重定向输入到前一个管道的读端
                                 if i > 0 {
+                                    // 关闭当前进程的标准输入文件描述符
                                     close(0);
+                                    // 重定向标准输入到前一个管道的读端
                                     let read_end = pipes_fd.get(i - 1).unwrap()[0];
+                                    // 将管道的读端设置到进程的标准输入文件描述符上，
+                                    // 在调用代码中会获取到一个新的文件描述符，
+                                    // 此时获取到的描述符为上方代码中调用 close 释放掉的标准IO
                                     assert_eq!(dup(read_end), 0);
                                 }
-                                // send output to the next process
+                                // 当前进程不是最后一个进程时，重定向输出到当前管道的写端
                                 if i < process_arguments_list.len() - 1 {
+                                    // 关闭当前进程的标准输出文件描述符
                                     close(1);
+                                    // 效果与上方类似，重定向标准输出到当前管道的写端
                                     let write_end = pipes_fd.get(i).unwrap()[1];
                                     assert_eq!(dup(write_end), 1);
                                 }
-                                // close all pipe ends inherited from the parent process
+                                // 管道的两端都已经重定向完毕，关闭原始的管道文件描述符
                                 for pipe_fd in pipes_fd.iter() {
                                     close(pipe_fd[0]);
                                     close(pipe_fd[1]);
                                 }
-                                // execute new application
+                                // 执行子进程
                                 if exec(args_copy[0].as_str(), args_addr.as_slice()) == -1 {
                                     println!("Error when executing!");
                                     return -4;

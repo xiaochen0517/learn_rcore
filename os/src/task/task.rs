@@ -53,6 +53,7 @@ impl TaskControlBlockInner {
         self.get_status() == TaskStatus::Zombie
     }
     pub fn alloc_fd(&mut self) -> usize {
+        // 先查询当前用户进程闲置的文件描述符，如果有则复用，否则分配一个新的文件描述符
         if let Some(fd) = (0..self.fd_table.len()).find(|fd| self.fd_table[*fd].is_none()) {
             fd
         } else {
