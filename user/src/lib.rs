@@ -4,12 +4,14 @@
 
 #[macro_use]
 pub mod console;
-#[macro_use]
-extern crate bitflags;
 mod lang_items;
 mod syscall;
 
-use bitflags::bitflags;
+extern crate alloc;
+#[macro_use]
+extern crate bitflags;
+
+use alloc::vec::Vec;
 use buddy_system_allocator::LockedHeap;
 use core::ptr::addr_of_mut;
 use syscall::*;
@@ -28,18 +30,32 @@ pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
 
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".text.entry")]
-pub extern "C" fn _start() -> ! {
+pub extern "C" fn _start(argc: usize, argv: usize) -> ! {
     unsafe {
         HEAP.lock()
             .init(addr_of_mut!(HEAP_SPACE) as usize, USER_HEAP_SIZE);
     }
-    exit(main());
+    let mut v: Vec<&'static str> = Vec::new();
+    for i in 0..argc {
+        let str_start =
+            unsafe { ((argv + i * size_of::<usize>()) as *const usize).read_volatile() };
+        let len = (0usize..)
+            .find(|i| unsafe { ((str_start + *i) as *const u8).read_volatile() == 0 })
+            .unwrap();
+        v.push(
+            core::str::from_utf8(unsafe {
+                core::slice::from_raw_parts(str_start as *const u8, len)
+            })
+            .unwrap(),
+        );
+    }
+    exit(main(argc, v.as_slice()));
     panic!("unreachable after sys_exit!");
 }
 
 #[linkage = "weak"]
 #[unsafe(no_mangle)]
-fn main() -> i32 {
+fn main(_argc: usize, _argv: &[&str]) -> i32 {
     panic!("Cannot find main!");
 }
 
@@ -93,8 +109,8 @@ pub fn getpid() -> isize {
 pub fn fork() -> isize {
     sys_fork()
 }
-pub fn exec(path: &str) -> isize {
-    sys_exec(path)
+pub fn exec(path: &str, args: &[*const u8]) -> isize {
+    sys_exec(path, args)
 }
 pub fn wait(exit_code: &mut i32) -> isize {
     loop {

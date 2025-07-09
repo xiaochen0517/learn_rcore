@@ -10,7 +10,7 @@ pub use frame_allocator::{FrameTracker, frame_alloc, frame_dealloc};
 pub use memory_set::{KERNEL_SPACE, MapPermission, MemorySet, kernel_token, remap_test};
 pub use page_table::{
     PTEFlags, PageTable, PageTableEntry, UserBuffer, translated_byte_buffer, translated_refmut,
-    translated_str,
+    translated_str, translated_ref
 };
 
 /// initiate heap allocator, frame allocator and kernel space

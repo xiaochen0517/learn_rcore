@@ -1,7 +1,7 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
+use super::{FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum, frame_alloc};
 use alloc::string::String;
-use super::{FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum, frame_alloc, PhysAddr};
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
@@ -151,7 +151,7 @@ impl PageTable {
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.find_pte(vpn).map(|pte| *pte)
     }
-    
+
     pub fn translate_va(&self, va: VirtAddr) -> Option<PhysAddr> {
         self.find_pte(va.clone().floor()).map(|pte| {
             //println!("translate_va:va = {:?}", va);
@@ -237,6 +237,13 @@ pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
         .get_mut()
 }
 
+pub fn translated_ref<T>(token: usize, ptr: *const T) -> &'static T {
+    let page_table = PageTable::from_token(token);
+    page_table
+        .translate_va(VirtAddr::from(ptr as usize))
+        .unwrap()
+        .get_ref()
+}
 
 ///Array of u8 slice that user communicate with os
 pub struct UserBuffer {
