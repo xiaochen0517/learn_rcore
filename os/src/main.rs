@@ -22,7 +22,6 @@ pub mod task;
 mod timer;
 pub mod trap;
 
-use crate::drivers::block::block_device_test;
 use core::arch::global_asm;
 use log::{debug, error, info, trace, warn};
 
