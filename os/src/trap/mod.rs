@@ -1,6 +1,9 @@
 use crate::config::{TRAMPOLINE, TRAP_CONTEXT};
 use crate::syscall::syscall;
-use crate::task::{check_signals_error_of_current, current_add_signal, current_trap_cx, current_user_token, exit_current_and_run_next, handle_signals, suspend_current_and_run_next, SignalFlags};
+use crate::task::{
+    SignalFlags, check_signals_error_of_current, current_add_signal, current_trap_cx,
+    current_user_token, exit_current_and_run_next, handle_signals, suspend_current_and_run_next,
+};
 use crate::timer::set_next_trigger;
 pub use crate::trap::context::TrapContext;
 use core::arch::{asm, global_asm};
@@ -84,15 +87,17 @@ pub fn trap_handler() -> ! {
             );
         }
     }
-    // handle signals (handle the sent signal)
+    // 在程序每一次陷入内核态时，都会检查是否有信号需要处理
     //println!("[K] trap_handler:: handle_signals");
     handle_signals();
 
-    // check error signals (if error then exit)
+    // 检查当前进程是否存在错误或终止类型的信号
     if let Some((errno, msg)) = check_signals_error_of_current() {
         println!("[kernel] {}", msg);
         exit_current_and_run_next(errno);
     }
+
+    // 恢复用户态
     trap_return();
 }
 

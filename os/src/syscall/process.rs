@@ -8,6 +8,7 @@ use crate::timer::get_time_ms;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use log::debug;
 
 pub fn sys_exit(exit_code: i32) -> ! {
     exit_current_and_run_next(exit_code);
@@ -105,13 +106,16 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 }
 
 pub fn sys_kill(pid: usize, signum: i32) -> isize {
+    // 将指定 pid 转换为任务控制块对象
     if let Some(task) = pid2task(pid) {
+        // 转换类型同时检查信号编号是否合法
         if let Some(flag) = SignalFlags::from_bits(1 << signum) {
-            // insert the signal if legal
             let mut task_ref = task.inner_exclusive_access();
+            // 如果任务已经在处理该信号，则返回 -1
             if task_ref.signals.contains(flag) {
                 return -1;
             }
+            // 将信号插入到任务的待处理信号集中
             task_ref.signals.insert(flag);
             0
         } else {
@@ -140,13 +144,15 @@ pub fn sys_sigprocmask(mask: u32) -> isize {
 pub fn sys_sigreturn() -> isize {
     if let Some(task) = current_task() {
         let mut inner = task.inner_exclusive_access();
+        // 将当前任务正在处理的信号设置为 -1，表示没有正在处理的信号
         inner.handling_sig = -1;
-        // restore the trap context
+        // 恢复正常任务的 trap context
         let trap_ctx = inner.get_trap_cx();
         *trap_ctx = inner.trap_ctx_backup.unwrap();
         // Here we return the value of a0 in the trap_ctx,
         // otherwise it will be overwritten after we trap
         // back to the original execution of the application.
+        debug!("trap ctx a0: {}", trap_ctx.x[10]);
         trap_ctx.x[10] as isize
     } else {
         -1
@@ -173,15 +179,21 @@ pub fn sys_sigaction(
     let token = current_user_token();
     let task = current_task().unwrap();
     let mut inner = task.inner_exclusive_access();
+    // 检查信号编号是否合法
     if signum as usize > MAX_SIG {
         return -1;
     }
+    // 将 i32 转换为 SignalFlags 类型
     if let Some(flag) = SignalFlags::from_bits(1 << signum) {
+        // 检查 action 和 old_action 是否为合法指针，并且 flag 不可以是 SIGKILL 或 SIGSTOP
         if check_sigaction_error(flag, action as usize, old_action as usize) {
             return -1;
         }
+        // 从程序管理块中获取原有的信号处理动作
         let prev_action = inner.signal_actions.table[signum as usize];
+        // 将原有的信号处理动作复制到用户空间的 old_action 指针指向的位置
         *translated_refmut(token, old_action) = prev_action;
+        // 将新的信号处理动作设置到程序管理块中
         inner.signal_actions.table[signum as usize] = *translated_ref(token, action);
         0
     } else {

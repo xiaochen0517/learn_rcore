@@ -40,18 +40,27 @@ bitflags! {
 }
 
 impl SignalFlags {
+    /// # 如果包含了某个信号，则返回对应的错误代码和描述
+    ///
+    /// 信号类型为错误或终止信号
     pub fn check_error(&self) -> Option<(i32, &'static str)> {
         if self.contains(Self::SIGINT) {
+            // 中断信号，一般由 Ctrl+C 触发
             Some((-2, "Killed, SIGINT=2"))
         } else if self.contains(Self::SIGILL) {
+            // 非法指令信号，通常是由于执行了无效的机器指令
             Some((-4, "Illegal Instruction, SIGILL=4"))
         } else if self.contains(Self::SIGABRT) {
+            // 中止信号，通常由 abort() 函数触发
             Some((-6, "Aborted, SIGABRT=6"))
         } else if self.contains(Self::SIGFPE) {
+            // 浮点异常信号，通常是由于除以零或溢出等算术错误
             Some((-8, "Erroneous Arithmetic Operation, SIGFPE=8"))
         } else if self.contains(Self::SIGKILL) {
+            // 强制终止信号，无法被捕获或忽略
             Some((-9, "Killed, SIGKILL=9"))
         } else if self.contains(Self::SIGSEGV) {
+            // 段错误信号，通常是由于访问了无效的内存地址
             Some((-11, "Segmentation Fault, SIGSEGV=11"))
         } else {
             //println!("[K] signalflags check_error  {:?}", self);

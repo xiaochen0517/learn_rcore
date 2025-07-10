@@ -1,12 +1,14 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
 extern crate user_lib;
 
+use core::arch::asm;
 use user_lib::*;
 
-fn func() {
-    println!("user_sig_test passed");
+fn func(sig: usize) {
+    println!("user_sig_test passed: {}", sig);
     sigreturn();
 }
 
@@ -25,6 +27,11 @@ pub fn main() -> i32 {
         println!("Kill failed!");
         exit(1);
     }
-    println!("signal_simple: Done");
+    let mut sig: usize = 0;
+    unsafe {
+        // 使用汇编读取 a0 寄存器
+        asm!("mv {}, a0", out(reg) sig);
+    }
+    println!("signal_simple: sig {}", sig);
     0
 }

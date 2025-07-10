@@ -39,9 +39,9 @@ pub struct TaskControlBlockInner {
     pub handling_sig: isize,
     // Signal actions
     pub signal_actions: SignalActions,
-    // if the task is killed
+    // 任务是否被杀死
     pub killed: bool,
-    // if the task is frozen by a signal
+    // 任务是否被冻结
     pub frozen: bool,
     pub trap_ctx_backup: Option<TrapContext>,
 }

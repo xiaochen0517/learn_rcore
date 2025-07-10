@@ -63,7 +63,7 @@ impl ProcessArguments {
         }
 
         let mut args_addr: Vec<*const u8> = args_copy.iter().map(|arg| arg.as_ptr()).collect();
-        args_addr.push(core::ptr::null::<u8>());
+        args_addr.push(0 as *const u8);
 
         Self {
             input,

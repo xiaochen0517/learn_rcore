@@ -233,14 +233,18 @@ pub fn sigaction(
     action: Option<&SignalAction>,
     old_action: Option<&mut SignalAction>,
 ) -> isize {
-    // let action_ptr = match action {
-    //     Some(a) => a as *const _,
-    //     None => 0 as *const SignalAction,
-    // };
+    let action_ptr = match action {
+        Some(a) => a as *const _,
+        None => 0 as *const SignalAction,
+    };
+    let old_action_ptr = match old_action {
+        Some(a) => a as *mut SignalAction,
+        None => 0 as *mut SignalAction,
+    };
     sys_sigaction(
         signum,
-        action.map_or(core::ptr::null(), |a| a),
-        old_action.map_or(core::ptr::null_mut(), |a| a),
+        action_ptr,
+        old_action_ptr,
     )
 }
 
