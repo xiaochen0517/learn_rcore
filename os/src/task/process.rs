@@ -12,6 +12,7 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
+use log::debug;
 
 pub struct ProcessControlBlock {
     // immutable
@@ -73,10 +74,11 @@ impl ProcessControlBlock {
     }
 
     pub fn new(elf_data: &[u8]) -> Arc<Self> {
+        debug!("new process with elf data.");
         // memory_set with elf program headers/trampoline/trap context/user stack
         let (memory_set, ustack_base, entry_point) = MemorySet::from_elf(elf_data);
         // allocate a pid
-        let pid_handle = pid_alloc();
+        let pid_handle = pid_alloc();   
         let process = Arc::new(Self {
             pid: pid_handle,
             inner: unsafe {
@@ -129,6 +131,7 @@ impl ProcessControlBlock {
         insert_into_pid2process(process.getpid(), Arc::clone(&process));
         // add main thread to scheduler
         add_task(task);
+        debug!("new process with pid: {}", process.getpid());
         process
     }
 
