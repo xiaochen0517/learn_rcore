@@ -1,17 +1,18 @@
-use crate::println;
-use core::panic::PanicInfo;
+use super::{SignalFlags, getpid, kill};
 
 #[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    if let Some(location) = info.location() {
+fn panic_handler(panic_info: &core::panic::PanicInfo) -> ! {
+    let err = panic_info.message();
+    if let Some(location) = panic_info.location() {
         println!(
-            "Panicked at {}:{} {}",
+            "Panicked at {}:{}, {}",
             location.file(),
             location.line(),
-            info.message()
+            err
         );
     } else {
-        println!("Panicked: {}", info.message());
+        println!("Panicked: {}", err);
     }
-    loop {}
+    kill(getpid() as usize, SignalFlags::SIGABRT.bits());
+    unreachable!()
 }
