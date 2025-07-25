@@ -1,6 +1,6 @@
 use super::File;
 use crate::mm::UserBuffer;
-use crate::sync::UPSafeCell;
+use crate::sync::UPIntrFreeCell;
 use alloc::sync::{Arc, Weak};
 
 use crate::task::suspend_current_and_run_next;
@@ -8,18 +8,18 @@ use crate::task::suspend_current_and_run_next;
 pub struct Pipe {
     readable: bool,
     writable: bool,
-    buffer: Arc<UPSafeCell<PipeRingBuffer>>,
+    buffer: Arc<UPIntrFreeCell<PipeRingBuffer>>,
 }
 
 impl Pipe {
-    pub fn read_end_with_buffer(buffer: Arc<UPSafeCell<PipeRingBuffer>>) -> Self {
+    pub fn read_end_with_buffer(buffer: Arc<UPIntrFreeCell<PipeRingBuffer>>) -> Self {
         Self {
             readable: true,
             writable: false,
             buffer,
         }
     }
-    pub fn write_end_with_buffer(buffer: Arc<UPSafeCell<PipeRingBuffer>>) -> Self {
+    pub fn write_end_with_buffer(buffer: Arc<UPIntrFreeCell<PipeRingBuffer>>) -> Self {
         Self {
             readable: false,
             writable: true,
@@ -37,13 +37,6 @@ enum RingBufferStatus {
     Normal,
 }
 
-/// # 管道环形缓冲区
-///
-/// 在执行写入操作时，结构体中的 `tail` 指针会向前移动，
-/// 在执行读取操作时，结构体中的 `head` 指针会向前移动。
-///
-/// 其中状态在执行写入操作时会被设置为 `RingBufferStatus::Normal` 或者 `RingBufferStatus::Full`，
-/// 执行读取操作时会被设置为 `RingBufferStatus::Normal` 或者 `RingBufferStatus::Empty`。
 pub struct PipeRingBuffer {
     arr: [u8; RING_BUFFER_SIZE],
     head: usize,
@@ -65,21 +58,17 @@ impl PipeRingBuffer {
     pub fn set_write_end(&mut self, write_end: &Arc<Pipe>) {
         self.write_end = Some(Arc::downgrade(write_end));
     }
-    /// # 写入一个字节到环形缓冲区
     pub fn write_byte(&mut self, byte: u8) {
         self.status = RingBufferStatus::Normal;
         self.arr[self.tail] = byte;
-        // 通过对 RING_BUFFER_SIZE 取模来实现环形缓冲区，防止数组越界
         self.tail = (self.tail + 1) % RING_BUFFER_SIZE;
         if self.tail == self.head {
             self.status = RingBufferStatus::Full;
         }
     }
-    /// # 从环形缓冲区读取一个字节
     pub fn read_byte(&mut self) -> u8 {
         self.status = RingBufferStatus::Normal;
         let c = self.arr[self.head];
-        // 通过对 RING_BUFFER_SIZE 取模来实现环形缓冲区，防止数组越界
         self.head = (self.head + 1) % RING_BUFFER_SIZE;
         if self.head == self.tail {
             self.status = RingBufferStatus::Empty;
@@ -102,9 +91,6 @@ impl PipeRingBuffer {
             RING_BUFFER_SIZE - self.available_read()
         }
     }
-    /// # 检查所有写端是否都已关闭
-    ///
-    /// 通过对 `Weak<Pipe>` 升级为强引用，来检查写端是否仍然存在。
     pub fn all_write_ends_closed(&self) -> bool {
         self.write_end.as_ref().unwrap().upgrade().is_none()
     }
@@ -112,7 +98,7 @@ impl PipeRingBuffer {
 
 /// Return (read_end, write_end)
 pub fn make_pipe() -> (Arc<Pipe>, Arc<Pipe>) {
-    let buffer = Arc::new(unsafe { UPSafeCell::new(PipeRingBuffer::new()) });
+    let buffer = Arc::new(unsafe { UPIntrFreeCell::new(PipeRingBuffer::new()) });
     let read_end = Arc::new(Pipe::read_end_with_buffer(buffer.clone()));
     let write_end = Arc::new(Pipe::write_end_with_buffer(buffer.clone()));
     buffer.exclusive_access().set_write_end(&write_end);

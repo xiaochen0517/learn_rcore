@@ -5,48 +5,44 @@
 .macro LOAD_GP n
     ld x\n, \n*8(sp)
 .endm
-    # 此段为跳板中的 trap 处理代码
     .section .text.trampoline
     .globl __alltraps
     .globl __restore
+    .globl __alltraps_k
+    .globl __restore_k
     .align 2
 __alltraps:
-    # 当前的 sscratch 指向应用空间中的 TrapContext
-    # 当前的 sp 指向应用空间中的用户栈
-    # 将 sp 指向 TrapContext 的位置
     csrrw sp, sscratch, sp
-    # 在应用空间中的 TrapContext 中保存当前的寄存器等信息
+    # now sp->*TrapContext in user space, sscratch->user stack
+    # save other general purpose registers
     sd x1, 1*8(sp)
-    # 跳过 sp(x2)
+    # skip sp(x2), we will save it later
     sd x3, 3*8(sp)
-    # 跳过 tp(x4)
-    # 保存 x5~x31
+    # skip tp(x4), application does not use it
+    # save x5~x31
     .set n, 5
     .rept 27
         SAVE_GP %n
         .set n, n+1
     .endr
-    # 使用 tn 读取 csr 寄存器，并将其值保存到 TrapContext 中
+    # we can use t0/t1/t2 freely, because they have been saved in TrapContext
     csrr t0, sstatus
     csrr t1, sepc
     sd t0, 32*8(sp)
     sd t1, 33*8(sp)
-    # 读取 sscratch 并将其保存在 TrapContext 中
+    # read user stack from sscratch and save it in TrapContext
     csrr t2, sscratch
     sd t2, 2*8(sp)
-
-    # 加载应用加载时初始化在 TrapContext 中的用户空间 token 等信息，用于内核内存空间切换
-    # 加载 kernel_satp 到 t0
+    # load kernel_satp into t0
     ld t0, 34*8(sp)
-    # 加载 trap_handler 到 t1
+    # load trap_handler into t1
     ld t1, 36*8(sp)
-    # 加载内核栈顶指针 kernel_sp
+    # move to kernel_sp
     ld sp, 35*8(sp)
-    # 切换到内核空间
+    # switch to kernel space
     csrw satp, t0
-    # 刷新 TLB
     sfence.vma
-    # 跳转到 rust 编写的 trap_handler
+    # jump to trap_handler
     jr t1
 
 __restore:
@@ -72,4 +68,37 @@ __restore:
     .endr
     # back to user stack
     ld sp, 2*8(sp)
+    sret
+
+    .align 2
+__alltraps_k:
+    addi sp, sp, -34*8 
+    sd x1, 1*8(sp)
+    sd x3, 3*8(sp)
+    .set n, 5
+    .rept 27
+        SAVE_GP %n
+        .set n, n+1
+    .endr
+    csrr t0, sstatus
+    csrr t1, sepc
+    sd t0, 32*8(sp)
+    sd t1, 33*8(sp)
+    mv a0, sp
+    csrr t2, sscratch
+    jalr t2
+
+__restore_k:
+    ld t0, 32*8(sp)
+    ld t1, 33*8(sp)
+    csrw sstatus, t0
+    csrw sepc, t1
+    ld x1, 1*8(sp)
+    ld x3, 3*8(sp)
+    .set n, 5
+    .rept 27
+        LOAD_GP %n
+        .set n, n+1
+    .endr
+    addi sp, sp, 34*8
     sret

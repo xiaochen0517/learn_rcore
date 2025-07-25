@@ -57,21 +57,16 @@ pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
 pub fn sys_semaphore_create(res_count: usize) -> isize {
     let process = current_process();
     let mut process_inner = process.inner_exclusive_access();
-
     let id = if let Some(id) = process_inner
-        // 从进程管理中获取到信号量配置列表
         .semaphore_list
         .iter()
         .enumerate()
-        // 过滤其中第一个为空的项用于后续使用
         .find(|(_, item)| item.is_none())
         .map(|(id, _)| id)
     {
-        // 将为空的项设置为当前的新信号量配置使用
         process_inner.semaphore_list[id] = Some(Arc::new(Semaphore::new(res_count)));
         id
     } else {
-        // 如果没有无用的信号量配置，则需要创建一个新的配置
         process_inner
             .semaphore_list
             .push(Some(Arc::new(Semaphore::new(res_count))));
@@ -83,7 +78,6 @@ pub fn sys_semaphore_create(res_count: usize) -> isize {
 pub fn sys_semaphore_up(sem_id: usize) -> isize {
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
-    // 对信号量进行 up 操作
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
     drop(process_inner);
     sem.up();
@@ -93,7 +87,6 @@ pub fn sys_semaphore_up(sem_id: usize) -> isize {
 pub fn sys_semaphore_down(sem_id: usize) -> isize {
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
-    // 对信号量进行 down 操作
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
     drop(process_inner);
     sem.down();
@@ -136,6 +129,6 @@ pub fn sys_condvar_wait(condvar_id: usize, mutex_id: usize) -> isize {
     let condvar = Arc::clone(process_inner.condvar_list[condvar_id].as_ref().unwrap());
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
     drop(process_inner);
-    condvar.wait(mutex);
+    condvar.wait_with_mutex(mutex);
     0
 }

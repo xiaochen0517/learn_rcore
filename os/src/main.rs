@@ -1,88 +1,79 @@
-#![no_main]
 #![no_std]
+#![no_main]
 #![feature(alloc_error_handler)]
 
+//use crate::drivers::{GPU_DEVICE, KEYBOARD_DEVICE, MOUSE_DEVICE, INPUT_CONDVAR};
+use crate::drivers::{GPU_DEVICE, KEYBOARD_DEVICE, MOUSE_DEVICE};
 extern crate alloc;
+
 #[macro_use]
 extern crate bitflags;
 
+use log::*;
+
+#[path = "boards/qemu.rs"]
+mod board;
+
 #[macro_use]
 mod console;
-mod boards;
 mod config;
 mod drivers;
 mod fs;
 mod lang_items;
-pub mod logging;
+mod logging;
 mod mm;
+mod net;
 mod sbi;
 mod sync;
-pub mod syscall;
-pub mod task;
+mod syscall;
+mod task;
 mod timer;
-pub mod trap;
+mod trap;
 
-use core::arch::global_asm;
-use log::{debug, error, info, trace, warn};
+use crate::drivers::chardev::CharDevice;
+use crate::drivers::chardev::UART;
 
-global_asm!(include_str!("entry.asm"));
-
-unsafe extern "C" {
-    fn stext(); // begin addr of text segment
-    fn etext(); // end addr of text segment
-    fn srodata(); // start addr of Read-Only data segment
-    fn erodata(); // end addr of Read-Only data ssegment
-    fn sdata(); // start addr of data segment
-    fn edata(); // end addr of data segment
-    fn sbss(); // start addr of BSS segment
-    fn ebss(); // end addr of BSS segment
-    fn boot_stack_lower_bound(); // stack lower bound
-    fn boot_stack_top(); // stack top
-}
+core::arch::global_asm!(include_str!("entry.asm"));
 
 fn clear_bss() {
+    unsafe extern "C" {
+        safe fn sbss();
+        safe fn ebss();
+    }
     unsafe {
         core::slice::from_raw_parts_mut(sbss as usize as *mut u8, ebss as usize - sbss as usize)
             .fill(0);
     }
 }
 
-fn print_boot_info() {
-    println!("[kernel] Hello, RISC-V World!");
-    println!("[kernel] Hello, world!");
-    trace!(
-        "[kernel] .text [{:#x}, {:#x})",
-        stext as usize, etext as usize
-    );
-    debug!(
-        "[kernel] .rodata [{:#x}, {:#x})",
-        srodata as usize, erodata as usize
-    );
-    info!(
-        "[kernel] .data [{:#x}, {:#x})",
-        sdata as usize, edata as usize
-    );
-    warn!(
-        "[kernel] boot_stack top=bottom={:#x}, lower_bound={:#x}",
-        boot_stack_top as usize, boot_stack_lower_bound as usize
-    );
-    error!("[kernel] .bss [{:#x}, {:#x})", sbss as usize, ebss as usize);
-    info!("[kernel] -- Boot Info End --");
+use lazy_static::*;
+use sync::UPIntrFreeCell;
+
+lazy_static! {
+    pub static ref DEV_NON_BLOCKING_ACCESS: UPIntrFreeCell<bool> =
+        unsafe { UPIntrFreeCell::new(false) };
 }
 
 #[unsafe(no_mangle)]
-fn rust_main() {
+pub fn rust_main() -> ! {
     clear_bss();
     logging::init();
-    print_boot_info();
-    info!("[kernel] Hello, world!");
     mm::init();
-    mm::remap_test();
+    UART.init();
+    info!("KERN: init gpu");
+    let _gpu = GPU_DEVICE.clone();
+    info!("KERN: init keyboard");
+    let _keyboard = KEYBOARD_DEVICE.clone();
+    info!("KERN: init mouse");
+    let _mouse = MOUSE_DEVICE.clone();
+    info!("KERN: init trap");
     trap::init();
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
+    board::device_init();
     fs::list_apps();
     task::add_initproc();
+    *DEV_NON_BLOCKING_ACCESS.exclusive_access() = true;
     task::run_tasks();
     panic!("Unreachable in rust_main!");
 }

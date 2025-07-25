@@ -1,43 +1,32 @@
-//! `Arc<Inode>` -> `OSInodeInner`: In order to open files concurrently
-//! we need to wrap `Inode` into `Arc`,but `Mutex` in `Inode` prevents
-//! file systems from being accessed simultaneously
-//!
-//! `UPSafeCell<OSInodeInner>` -> `OSInode`: for static `ROOT_INODE`,we
-//! need to wrap `OSInodeInner` into `UPSafeCell`
 use super::File;
 use crate::drivers::BLOCK_DEVICE;
 use crate::mm::UserBuffer;
-use crate::sync::UPSafeCell;
+use crate::sync::UPIntrFreeCell;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::*;
 use easy_fs::{EasyFileSystem, Inode};
 use lazy_static::*;
-use log::debug;
 
-/// A wrapper around a filesystem inode
-/// to implement File trait atop
 pub struct OSInode {
     readable: bool,
     writable: bool,
-    inner: UPSafeCell<OSInodeInner>,
+    inner: UPIntrFreeCell<OSInodeInner>,
 }
-/// The OS inode inner in 'UPSafeCell'
+
 pub struct OSInodeInner {
     offset: usize,
     inode: Arc<Inode>,
 }
 
 impl OSInode {
-    /// Construct an OS inode from a inode
     pub fn new(readable: bool, writable: bool, inode: Arc<Inode>) -> Self {
         Self {
             readable,
             writable,
-            inner: unsafe { UPSafeCell::new(OSInodeInner { offset: 0, inode }) },
+            inner: unsafe { UPIntrFreeCell::new(OSInodeInner { offset: 0, inode }) },
         }
     }
-    /// Read all data inside a inode into vector
     pub fn read_all(&self) -> Vec<u8> {
         let mut inner = self.inner.exclusive_access();
         let mut buffer = [0u8; 512];
@@ -56,33 +45,25 @@ impl OSInode {
 
 lazy_static! {
     pub static ref ROOT_INODE: Arc<Inode> = {
-        debug!("Creating root inode");
         let efs = EasyFileSystem::open(BLOCK_DEVICE.clone());
-        // debug!("EFS created.");
         Arc::new(EasyFileSystem::root_inode(&efs))
     };
 }
-/// List all files in the filesystems
+
 pub fn list_apps() {
-    println!("/**** APPS ****/");
+    println!("/**** APPS ****");
     for app in ROOT_INODE.ls() {
         println!("{}", app);
     }
-    println!("/**************/");
+    println!("**************/")
 }
 
 bitflags! {
-    ///Open file flags
     pub struct OpenFlags: u32 {
-        ///Read only
         const RDONLY = 0;
-        ///Write only
         const WRONLY = 1 << 0;
-        ///Read & Write
         const RDWR = 1 << 1;
-        ///Allow create
         const CREATE = 1 << 9;
-        ///Clear file and return an empty one
         const TRUNC = 1 << 10;
     }
 }
@@ -100,7 +81,7 @@ impl OpenFlags {
         }
     }
 }
-///Open file with flags
+
 pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
     let (readable, writable) = flags.read_write();
     if flags.contains(OpenFlags::CREATE) {
