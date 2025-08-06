@@ -12,9 +12,13 @@ BOARD := qemu
 SBI ?= rustsbi
 BOOTLOADER := ../bootloader/$(SBI)-$(BOARD).bin
 
+DISPLAY ?= gtk
+
 # GUI
 GUI ?= off
-ifeq ($(GUI), off)
+ifeq ($(GUI), on)
+	GUI_OPTION := -display $(DISPLAY),gl=on,show-cursor=on
+else
 	GUI_OPTION := -display none
 endif
 

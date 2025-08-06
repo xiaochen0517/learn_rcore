@@ -21,7 +21,7 @@ pub trait GpuDevice: Send + Sync + Any {
 }
 
 lazy_static::lazy_static!(
-    pub static ref GPU_DEVICE: Arc<dyn GpuDevice> = Arc::new(VirtIOGpuWrapper::new(true));
+    pub static ref GPU_DEVICE: Arc<dyn GpuDevice> = Arc::new(VirtIOGpuWrapper::new(false));
 );
 
 pub struct VirtIOGpuWrapper {
@@ -51,7 +51,7 @@ impl VirtIOGpuWrapper {
                 let mut v = i.to_vec();
                 b.append(&mut v);
                 if i == [255, 255, 255] {
-                    b.push(0x80)
+                    b.push(0x00)
                 } else {
                     b.push(0xff)
                 }
@@ -59,7 +59,7 @@ impl VirtIOGpuWrapper {
             info!("Setting up cursor, image size: {}", b.len());
 
             if !use_soft_cursor {
-                virtio.setup_cursor(b.as_slice(), 64, 64, 64, 64).unwrap();
+                virtio.setup_cursor(b.as_slice(), 50, 50, 40, 40).unwrap();
             }
 
             Self {
