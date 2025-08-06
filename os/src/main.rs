@@ -54,6 +54,27 @@ lazy_static! {
         unsafe { UPIntrFreeCell::new(false) };
 }
 
+fn test_gpu() {
+    let fb = GPU_DEVICE.get_framebuffer();
+    let height = 800;
+    let width = 1280;
+    //把像素数据写入显存
+    for y in 0..height {
+        //height=800
+        for x in 0..width {
+            //width=1280
+            let idx = (y * width + x) * 4;
+            fb[idx] = u8::MAX;
+            fb[idx + 1] = u8::MAX;
+            fb[idx + 2] = u8::MAX;
+        }
+    }
+    GPU_DEVICE.flush();
+
+    GPU_DEVICE.update_cursor((width / 2) as u32, (height / 2) as u32);
+    GPU_DEVICE.flush();
+}
+
 #[unsafe(no_mangle)]
 pub fn rust_main() -> ! {
     clear_bss();
@@ -62,6 +83,7 @@ pub fn rust_main() -> ! {
     UART.init();
     info!("KERN: init gpu");
     let _gpu = GPU_DEVICE.clone();
+    test_gpu();
     info!("KERN: init keyboard");
     let _keyboard = KEYBOARD_DEVICE.clone();
     info!("KERN: init mouse");

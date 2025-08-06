@@ -2,13 +2,16 @@ use crate::drivers::bus::virtio::VirtioHal;
 use crate::sync::UPIntrFreeCell;
 use alloc::{sync::Arc, vec::Vec};
 use core::any::Any;
+use core::ops::DerefMut;
 use embedded_graphics::pixelcolor::Rgb888;
+use log::info;
 use tinybmp::Bmp;
 use virtio_drivers::{VirtIOGpu, VirtIOHeader};
 const VIRTIO7: usize = 0x10007000;
 pub trait GpuDevice: Send + Sync + Any {
     fn get_framebuffer(&self) -> &mut [u8];
     fn flush(&self);
+    fn update_cursor(&self, pos_x: u32, pos_y: u32);
 }
 
 lazy_static::lazy_static!(
@@ -38,12 +41,13 @@ impl VirtIOGpuWrapper {
                 let mut v = i.to_vec();
                 b.append(&mut v);
                 if i == [255, 255, 255] {
-                    b.push(0x0)
+                    b.push(0x80)
                 } else {
                     b.push(0xff)
                 }
             }
-            virtio.setup_cursor(b.as_slice(), 50, 50, 50, 50).unwrap();
+            info!("Setting up cursor, image size: {}", b.len());
+            virtio.setup_cursor(b.as_slice(), 64, 64, 32, 32).unwrap();
 
             Self {
                 gpu: UPIntrFreeCell::new(virtio),
@@ -62,5 +66,11 @@ impl GpuDevice for VirtIOGpuWrapper {
             let ptr = self.fb.as_ptr() as *const _ as *mut u8;
             core::slice::from_raw_parts_mut(ptr, self.fb.len())
         }
+    }
+    fn update_cursor(&self, pos_x: u32, pos_y: u32) {
+        self.gpu
+            .exclusive_access()
+            .move_cursor(pos_x, pos_y)
+            .unwrap();
     }
 }
