@@ -1,8 +1,9 @@
-use crate::{read, write};
 use core::fmt::{self, Write};
 
 const STDIN: usize = 0;
 const STDOUT: usize = 1;
+
+use super::{read, write};
 
 struct Stdout;
 
@@ -17,7 +18,6 @@ pub fn print(args: fmt::Arguments) {
     Stdout.write_fmt(args).unwrap();
 }
 
-/// print string macro
 #[macro_export]
 macro_rules! print {
     ($fmt: literal $(, $($arg: tt)+)?) => {
@@ -25,7 +25,6 @@ macro_rules! print {
     }
 }
 
-/// println string macro
 #[macro_export]
 macro_rules! println {
     ($fmt: literal $(, $($arg: tt)+)?) => {
