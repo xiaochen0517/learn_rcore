@@ -1,30 +1,40 @@
+use crate::board::{VIRTGPU_XRES, VIRTGPU_YRES};
 use crate::drivers::bus::virtio::VirtioHal;
 use crate::sync::UPIntrFreeCell;
 use alloc::{sync::Arc, vec::Vec};
 use core::any::Any;
-use core::ops::DerefMut;
+use core::cell::Cell;
+use core::ops::{Deref, DerefMut};
 use embedded_graphics::pixelcolor::Rgb888;
 use log::info;
 use tinybmp::Bmp;
 use virtio_drivers::{VirtIOGpu, VirtIOHeader};
+
 const VIRTIO7: usize = 0x10007000;
+const CURSOR_SIZE: usize = 64;
 pub trait GpuDevice: Send + Sync + Any {
     fn get_framebuffer(&self) -> &mut [u8];
+    fn draw_soft_cursor(&self);
     fn flush(&self);
     fn update_cursor(&self, pos_x: u32, pos_y: u32);
+    fn get_cursor_pos(&self) -> (u32, u32);
 }
 
 lazy_static::lazy_static!(
-    pub static ref GPU_DEVICE: Arc<dyn GpuDevice> = Arc::new(VirtIOGpuWrapper::new());
+    pub static ref GPU_DEVICE: Arc<dyn GpuDevice> = Arc::new(VirtIOGpuWrapper::new(true));
 );
 
 pub struct VirtIOGpuWrapper {
     gpu: UPIntrFreeCell<VirtIOGpu<'static, VirtioHal>>,
     fb: &'static [u8],
+    cursor_buf: Vec<u8>,
+    cursor_pos: UPIntrFreeCell<(u32, u32)>,
+    use_soft_cursor: bool,
+    cursor_visible: bool,
 }
 static BMP_DATA: &[u8] = include_bytes!("../../assert/mouse.bmp");
 impl VirtIOGpuWrapper {
-    pub fn new() -> Self {
+    pub fn new(use_soft_cursor: bool) -> Self {
         unsafe {
             let mut virtio =
                 VirtIOGpu::<VirtioHal>::new(&mut *(VIRTIO7 as *mut VirtIOHeader)).unwrap();
@@ -47,18 +57,67 @@ impl VirtIOGpuWrapper {
                 }
             }
             info!("Setting up cursor, image size: {}", b.len());
-            virtio.setup_cursor(b.as_slice(), 64, 64, 32, 32).unwrap();
+
+            if !use_soft_cursor {
+                virtio.setup_cursor(b.as_slice(), 64, 64, 64, 64).unwrap();
+            }
 
             Self {
                 gpu: UPIntrFreeCell::new(virtio),
                 fb,
+                cursor_buf: b,
+                cursor_pos: UPIntrFreeCell::new((0, 0)),
+                use_soft_cursor,
+                cursor_visible: true,
             }
         }
     }
 }
 
 impl GpuDevice for VirtIOGpuWrapper {
+    fn draw_soft_cursor(&self) {
+        if !self.use_soft_cursor || !self.cursor_visible {
+            return;
+        }
+        let fb = GPU_DEVICE.get_framebuffer();
+        let (pos_x, pos_y) = *self.cursor_pos.exclusive_access();
+
+        // 遍历光标区域
+        for y_offset in 0..CURSOR_SIZE as u32 {
+            let fb_y = pos_y + y_offset;
+            if fb_y >= VIRTGPU_YRES {
+                // 假设屏幕高度为800，应该使用常量
+                break;
+            }
+
+            for x_offset in 0..CURSOR_SIZE as u32 {
+                let fb_x = pos_x + x_offset;
+                if fb_x >= VIRTGPU_XRES {
+                    break;
+                }
+
+                // 计算在cursor_buf中的位置（4字节/像素）
+                let cursor_idx = (y_offset as usize * CURSOR_SIZE + x_offset as usize) * 4;
+
+                // 确保不会越界
+                if cursor_idx + 2 < self.cursor_buf.len() {
+                    // 计算在framebuffer中的位置（4字节/像素）
+                    let fb_idx = (fb_y as usize * VIRTGPU_XRES as usize + fb_x as usize) * 4;
+
+                    // 确保不会越界
+                    if fb_idx + 4 < fb.len() {
+                        // 从cursor_buf读取RGB值并写入framebuffer
+                        fb[fb_idx] = self.cursor_buf[cursor_idx]; // Blue
+                        fb[fb_idx + 1] = self.cursor_buf[cursor_idx + 1]; // Green
+                        fb[fb_idx + 2] = self.cursor_buf[cursor_idx + 2]; // Red
+                        fb[fb_idx + 3] = self.cursor_buf[cursor_idx + 3]; // Alpha
+                    }
+                }
+            }
+        }
+    }
     fn flush(&self) {
+        self.draw_soft_cursor();
         self.gpu.exclusive_access().flush().unwrap();
     }
     fn get_framebuffer(&self) -> &mut [u8] {
@@ -68,9 +127,17 @@ impl GpuDevice for VirtIOGpuWrapper {
         }
     }
     fn update_cursor(&self, pos_x: u32, pos_y: u32) {
-        self.gpu
-            .exclusive_access()
-            .move_cursor(pos_x, pos_y)
-            .unwrap();
+        if self.use_soft_cursor {
+            *self.cursor_pos.exclusive_access() = (pos_x, pos_y);
+            self.flush();
+        } else {
+            self.gpu
+                .exclusive_access()
+                .move_cursor(pos_x, pos_y)
+                .unwrap();
+        }
+    }
+    fn get_cursor_pos(&self) -> (u32, u32) {
+        *self.cursor_pos.exclusive_access()
     }
 }

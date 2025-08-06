@@ -83,7 +83,6 @@ pub fn rust_main() -> ! {
     UART.init();
     info!("KERN: init gpu");
     let _gpu = GPU_DEVICE.clone();
-    test_gpu();
     info!("KERN: init keyboard");
     let _keyboard = KEYBOARD_DEVICE.clone();
     info!("KERN: init mouse");
@@ -96,6 +95,7 @@ pub fn rust_main() -> ! {
     fs::list_apps();
     task::add_initproc();
     *DEV_NON_BLOCKING_ACCESS.exclusive_access() = true;
+    test_gpu();
     task::run_tasks();
     panic!("Unreachable in rust_main!");
 }

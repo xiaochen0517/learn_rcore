@@ -13,11 +13,10 @@ pub type CharDeviceImpl = crate::drivers::chardev::NS16550a<VIRT_UART>;
 
 pub const VIRT_PLIC: usize = 0xC00_0000;
 pub const VIRT_UART: usize = 0x1000_0000;
-#[allow(unused)]
 pub const VIRTGPU_XRES: u32 = 1280;
-#[allow(unused)]
 pub const VIRTGPU_YRES: u32 = 800;
 
+use log::debug;
 use crate::drivers::block::BLOCK_DEVICE;
 use crate::drivers::chardev::{CharDevice, UART};
 use crate::drivers::plic::{IntrTargetPriority, PLIC};
@@ -44,6 +43,7 @@ pub fn device_init() {
 pub fn irq_handler() {
     let mut plic = unsafe { PLIC::new(VIRT_PLIC) };
     let intr_src_id = plic.claim(0, IntrTargetPriority::Supervisor);
+    debug!("irq_handler: {}", intr_src_id);
     match intr_src_id {
         5 => KEYBOARD_DEVICE.handle_irq(),
         6 => MOUSE_DEVICE.handle_irq(),
