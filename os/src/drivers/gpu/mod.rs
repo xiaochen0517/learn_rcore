@@ -25,13 +25,19 @@ lazy_static::lazy_static!(
 );
 
 pub struct VirtIOGpuWrapper {
+    /// virtio_gpu 设备功能封装
     gpu: UPIntrFreeCell<VirtIOGpu<'static, VirtioHal>>,
+    /// 显示缓冲区内容
     fb: &'static [u8],
-    /// 光标位置的原始图像信息
+    /// 绘制光标时光标位置的原始图像信息
     cursor_origin_buf: UPIntrFreeCell<Vec<u8>>,
+    /// 光标图像信息
     cursor_buf: Vec<u8>,
+    /// 光标当前的位置
     cursor_pos: UPIntrFreeCell<(u32, u32)>,
+    /// 是否使用软件光标
     use_soft_cursor: bool,
+    /// 光标是否可见
     cursor_visible: bool,
 }
 static BMP_DATA: &[u8] = include_bytes!("../../assert/mouse.bmp");
