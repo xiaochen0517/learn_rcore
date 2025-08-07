@@ -32,6 +32,8 @@ const SYSCALL_FRAMEBUFFER: usize = 2000;
 const SYSCALL_FRAMEBUFFER_FLUSH: usize = 2001;
 const SYSCALL_EVENT_GET: usize = 3000;
 const SYSCALL_KEY_PRESSED: usize = 3001;
+const SYSCALL_CURSOR_UPDATE: usize = 3002;
+const SYSCALL_CURSOR_POS_GET: usize = 3003;
 
 fn syscall(id: usize, args: [usize; 3]) -> isize {
     let mut ret: isize;
@@ -192,4 +194,12 @@ pub fn sys_event_get() -> isize {
 
 pub fn sys_key_pressed() -> isize {
     syscall(SYSCALL_KEY_PRESSED, [0, 0, 0])
+}
+
+pub fn sys_cursor_update(pos_x: usize, pos_y: usize) -> isize {
+    syscall(SYSCALL_CURSOR_UPDATE, [pos_x, pos_y, 0])
+}
+
+pub fn sys_cursor_pos_get() -> isize {
+    syscall(SYSCALL_CURSOR_POS_GET, [0, 0, 0])
 }

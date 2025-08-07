@@ -12,12 +12,12 @@ BOARD := qemu
 SBI ?= rustsbi
 BOOTLOADER := ../bootloader/$(SBI)-$(BOARD).bin
 
-DISPLAY ?= gtk
+DISPLAY := gtk
 
 # GUI
 GUI ?= off
 ifeq ($(GUI), on)
-	GUI_OPTION := -display $(DISPLAY),gl=on,show-cursor=on
+	GUI_OPTION := -display $(DISPLAY),show-cursor=on
 else
 	GUI_OPTION := -display none
 endif
@@ -88,7 +88,7 @@ QEMU_ARGS := -machine virt \
 			 -device virtio-keyboard-device \
 			 -device virtio-mouse-device \
 			 -device virtio-net-device,netdev=net0 \
-			 -netdev user,id=net0,hostfwd=udp::6200-:2000,hostfwd=tcp::6201-:80
+			 -netdev user,id=net0,hostfwd=udp::6300-:2000,hostfwd=tcp::6301-:80
 
 fdt:
 	@qemu-system-riscv64 -M 128m -machine virt,dumpdtb=virt.out

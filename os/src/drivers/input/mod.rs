@@ -62,14 +62,8 @@ impl InputDevice for VirtIOInputWrapper {
     }
 
     fn handle_irq(&self) {
-        debug!("input irq handle active");
         let mut count = 0;
         let mut result = 0;
-
-        // 跟踪鼠标位置变化
-        let mut x_delta = 0;
-        let mut y_delta = 0;
-        let mut has_mouse_movement = false;
 
         self.inner.exclusive_session(|inner| {
             inner.virtio_input.ack_interrupt();
@@ -79,56 +73,9 @@ impl InputDevice for VirtIOInputWrapper {
                     | (event.code as u64) << 32
                     | (event.value) as u64;
 
-                debug!("input irq handle : {:?}", result);
-
-                // 处理鼠标事件
-                // 鼠标事件类型通常为0x02 (EV_REL)
-                if event.event_type == 0x03 {
-                    match event.code {
-                        // 鼠标X轴移动 (REL_X)
-                        0x00 => {
-                            x_delta = event.value as i32;
-                            has_mouse_movement = true;
-                        }
-                        // 鼠标Y轴移动 (REL_Y)
-                        0x01 => {
-                            y_delta = event.value as i32;
-                            has_mouse_movement = true;
-                        }
-                        _ => {}
-                    }
-                }
-
                 inner.events.push_back(result);
             }
         });
-
-        // 如果有鼠标移动，更新光标位置
-        if has_mouse_movement {
-            // 获取当前位置并计算新位置
-            let current_pos = GPU_DEVICE.get_cursor_pos();
-            let (mut new_x, mut new_y) = (
-                current_pos.0 as i32 + x_delta,
-                current_pos.1 as i32 + y_delta,
-            );
-            debug!("cursor moved: ({}, {})", new_x, new_y);
-
-            // 确保光标在屏幕范围内
-            if new_x < 0 {
-                new_x = 0;
-            }
-            if new_y < 0 {
-                new_y = 0;
-            }
-            if new_x >= crate::board::VIRTGPU_XRES as i32 {
-                new_x = crate::board::VIRTGPU_XRES as i32 - 1;
-            }
-            if new_y >= crate::board::VIRTGPU_YRES as i32 {
-                new_y = crate::board::VIRTGPU_YRES as i32 - 1;
-            }
-            // 更新光标位置
-            GPU_DEVICE.update_cursor(new_x as u32, new_y as u32);
-        }
 
         if count > 0 {
             self.condvar.signal();

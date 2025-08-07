@@ -16,6 +16,15 @@ pub fn framebuffer_flush() -> isize {
     sys_framebuffer_flush()
 }
 
+pub fn cursor_update(pos_x: usize, pos_y: usize) -> isize {
+    sys_cursor_update(pos_x, pos_y)
+}
+
+pub fn cursor_pos_get() -> (u32, u32) {
+    let pos_u64 = sys_cursor_pos_get();
+    ((pos_u64 >> 32) as u32, pos_u64 as u32)
+}
+
 pub struct Display {
     pub size: Size,
     pub fb: &'static mut [u8],
@@ -108,6 +117,6 @@ impl InputEvent {
             self.code as usize,
             self.value as usize,
         )
-            .ok()
+        .ok()
     }
 }

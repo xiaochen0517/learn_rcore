@@ -32,3 +32,15 @@ pub fn sys_framebuffer_flush() -> isize {
     GPU_DEVICE.flush();
     0
 }
+
+pub fn sys_cursor_update(pos_x: u32, pos_y: u32) -> isize {
+    GPU_DEVICE.update_cursor(pos_x, pos_y);
+    0
+}
+
+pub fn sys_cursor_pos_get() -> isize {
+    let cursor_pos = GPU_DEVICE.get_cursor_pos();
+    // 将两个 u32 合并为 u64
+    let pos = (cursor_pos.0 as u64) << 32 | cursor_pos.1 as u64;
+    pos as isize
+}
